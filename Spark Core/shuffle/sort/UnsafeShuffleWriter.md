@@ -5,43 +5,7 @@ package org.apache.spark.shuffle.sort;
 
 import javax.annotation.Nullable;
 import java.io.*;
-import java.nio.channels.FileChannel;
-import java.util.Iterator;
-
-import scala.Option;
-import scala.Product2;
-import scala.collection.JavaConverters;
-import scala.reflect.ClassTag;
-import scala.reflect.ClassTag$;
-
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.io.ByteStreams;
-import com.google.common.io.Closeables;
-import com.google.common.io.Files;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.apache.spark.*;
-import org.apache.spark.annotation.Private;
-import org.apache.spark.executor.ShuffleWriteMetrics;
-import org.apache.spark.io.CompressionCodec;
-import org.apache.spark.io.CompressionCodec$;
-import org.apache.spark.io.NioBufferedFileInputStream;
-import org.apache.commons.io.output.CloseShieldOutputStream;
-import org.apache.commons.io.output.CountingOutputStream;
-import org.apache.spark.memory.TaskMemoryManager;
-import org.apache.spark.network.util.LimitedInputStream;
-import org.apache.spark.scheduler.MapStatus;
-import org.apache.spark.scheduler.MapStatus$;
-import org.apache.spark.serializer.SerializationStream;
-import org.apache.spark.serializer.SerializerInstance;
-import org.apache.spark.shuffle.IndexShuffleBlockResolver;
-import org.apache.spark.shuffle.ShuffleWriter;
-import org.apache.spark.storage.BlockManager;
-import org.apache.spark.storage.TimeTrackingOutputStream;
-import org.apache.spark.unsafe.Platform;
-import org.apache.spark.util.Utils;
-import org.apache.spark.internal.config.package$;
+...
 
 @Private
 public class UnsafeShuffleWriter<K, V> extends ShuffleWriter<K, V> {

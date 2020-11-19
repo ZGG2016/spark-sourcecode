@@ -14,7 +14,7 @@ import org.apache.spark.{Partition, SparkContext, TaskContext}
 private[spark] class CheckpointRDDPartition(val index: Int) extends Partition
 
 /**
- * 一个用来从存储恢复checkpoint数据的RDD
+ * 一个用来从存储中恢复checkpoint数据的RDD
  * An RDD that recovers checkpointed data from storage.
  */
 private[spark] abstract class CheckpointRDD[T: ClassTag](sc: SparkContext)

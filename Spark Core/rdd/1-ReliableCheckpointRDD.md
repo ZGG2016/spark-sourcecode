@@ -1,23 +1,6 @@
 # ReliableCheckpointRDD
 
 ```java
-/*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package org.apache.spark.rdd
 
 import java.io.{FileNotFoundException, IOException}
@@ -38,7 +21,7 @@ import org.apache.spark.io.CompressionCodec
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
 /**
- * An RDD that reads from checkpoint files previously written to reliable storage.
+ * An RDD that reads from checkpoint files previously written to reliable storage. 从先前写入到可靠存储中的checkpoint文件中读取的RDD
  */
 private[spark] class ReliableCheckpointRDD[T: ClassTag](
     sc: SparkContext,
@@ -49,24 +32,34 @@ private[spark] class ReliableCheckpointRDD[T: ClassTag](
   @transient private val hadoopConf = sc.hadoopConfiguration
   @transient private val cpath = new Path(checkpointPath)
   @transient private val fs = cpath.getFileSystem(hadoopConf)
-  private val broadcastedConf = sc.broadcast(new SerializableConfiguration(hadoopConf))
+  private val broadcastedConf = sc.broadcast(new SerializableConfiguration(hadoopConf)) //广播
 
   // Fail fast if checkpoint directory does not exist
   require(fs.exists(cpath), s"Checkpoint directory does not exist: $checkpointPath")
 
   /**
+   * 返回这个RDD读取数据的checkpoint目录的路径
    * Return the path of the checkpoint directory this RDD reads data from.
    */
   override val getCheckpointFile: Option[String] = Some(checkpointPath)
 
   override val partitioner: Option[Partitioner] = {
     _partitioner.orElse {
+      //从Checkpoint目录中，读取分区器对象
       ReliableCheckpointRDD.readCheckpointedPartitionerFile(context, checkpointPath)
     }
   }
+//  @inline final def orElse[B >: A](alternative: => Option[B]): Option[B] =
+//    if (isEmpty) alternative else this
+
 
   /**
+   * 返回checkpoint目录文件中描述的分区
+   *
    * Return partitions described by the files in the checkpoint directory.
+   *
+   * 由于原始RDD可能属于以前的应用程序，因此无法预先知道预期的分区数量。
+   * 此方法假定原始的checkpoint文件集 在跨应用程序生命周期的可靠存储中 被完全保存。
    *
    * Since the original RDD may belong to a prior application, there is no way to know a
    * priori the number of partitions to expect. This method assumes that the original set of
@@ -74,20 +67,27 @@ private[spark] class ReliableCheckpointRDD[T: ClassTag](
    */
   protected override def getPartitions: Array[Partition] = {
     // listStatus can throw exception if path does not exist.
+    //listStatus：列出给定目录下的文件/目录状态
     val inputFiles = fs.listStatus(cpath)
       .map(_.getPath)
-      .filter(_.getName.startsWith("part-"))
-      .sortBy(_.getName.stripPrefix("part-").toInt)
+      .filter(_.getName.startsWith("part-"))  //过滤符合条件的元素
+      .sortBy(_.getName.stripPrefix("part-").toInt)  //排序
     // Fail fast if input files are invalid
+    // 检查分区文件目录格式
+    //zipWithIndex：RDD和它的元素索引组合。
     inputFiles.zipWithIndex.foreach { case (path, i) =>
+      //checkpointFileName：根据给定的分区索引，返回checkpoint文件名称
       if (path.getName != ReliableCheckpointRDD.checkpointFileName(i)) {
         throw new SparkException(s"Invalid checkpoint file: $path")
       }
     }
+//def tabulate[T: ClassTag](n: Int)(f: Int => T): Array[T]
+//将第二个参数f作用在数组的每个元素上，返回一个数组。
     Array.tabulate(inputFiles.length)(i => new CheckpointRDDPartition(i))
   }
 
   // Cache of preferred locations of checkpointed files.
+  //缓存checkpointed文件的优先位置
   @transient private[spark] lazy val cachedPreferredLocations = CacheBuilder.newBuilder()
     .expireAfterWrite(
       SparkEnv.get.conf.get(CACHE_CHECKPOINT_PREFERRED_LOCS_EXPIRE_TIME).get,
@@ -100,10 +100,14 @@ private[spark] class ReliableCheckpointRDD[T: ClassTag](
       })
 
   // Returns the block locations of given partition on file system.
+  // 返回给定分区的块的位置
   private def getPartitionBlockLocations(split: Partition): Seq[String] = {
+    //给定分区下文件的状态
     val status = fs.getFileStatus(
       new Path(checkpointPath, ReliableCheckpointRDD.checkpointFileName(split.index)))
+//Return an array containing hostnames, offset and size of portions of the given file. 
     val locations = fs.getFileBlockLocations(status, 0, status.getLen)
+//headOption：不空的话，选择第一个元素
     locations.headOption.toList.flatMap(_.getHosts).filter(_ != "localhost")
   }
 
@@ -135,10 +139,11 @@ private[spark] class ReliableCheckpointRDD[T: ClassTag](
 private[spark] object ReliableCheckpointRDD extends Logging {
 
   /**
+   * 根据给定的分区索引，返回checkpoint文件名称
    * Return the checkpoint file name for the given partition.
    */
   private def checkpointFileName(partitionIndex: Int): String = {
-    "part-%05d".format(partitionIndex)
+    "part-%05d".format(partitionIndex)  //part+分区索引
   }
 
   private def checkpointPartitionerFileName(): String = {
@@ -223,7 +228,9 @@ private[spark] object ReliableCheckpointRDD extends Logging {
     val bufferSize = env.conf.get(BUFFER_SIZE)
 
     val fileOutputStream = if (blockSize < 0) {
+    //create：Create an FSDataOutputStream at the indicated Path.
       val fileStream = fs.create(tempOutputPath, false, bufferSize)
+// CHECKPOINT_COMPRESS：Whether to compress RDD checkpoints。默认false
       if (env.conf.get(CHECKPOINT_COMPRESS)) {
         CompressionCodec.createCodec(env.conf).compressedOutputStream(fileStream)
       } else {
@@ -234,7 +241,10 @@ private[spark] object ReliableCheckpointRDD extends Logging {
       fs.create(tempOutputPath, false, bufferSize,
         fs.getDefaultReplication(fs.getWorkingDirectory), blockSize)
     }
+//getDefaultReplication：获取默认副本数，默认是1
+
     val serializer = env.serializer.newInstance()
+    //返回SerializationStream对象
     val serializeStream = serializer.serializeStream(fileOutputStream)
     Utils.tryWithSafeFinally {
       serializeStream.writeAll(iterator)
@@ -266,6 +276,7 @@ private[spark] object ReliableCheckpointRDD extends Logging {
   private def writePartitionerToCheckpointDir(
     sc: SparkContext, partitioner: Partitioner, checkpointDirPath: Path): Unit = {
     try {
+      //分区器文件路径
       val partitionerFilePath = new Path(checkpointDirPath, checkpointPartitionerFileName)
       val bufferSize = sc.conf.get(BUFFER_SIZE)
       val fs = partitionerFilePath.getFileSystem(sc.hadoopConfiguration)
@@ -286,6 +297,8 @@ private[spark] object ReliableCheckpointRDD extends Logging {
 
 
   /**
+   * 从给定RDD checkpoint目录读取一个分区器，如果存在的话。
+   *
    * Read a partitioner from the given RDD checkpoint directory, if it exists.
    * This is done on a best-effort basis; any exception while reading the partitioner is
    * caught, logged and ignored.
@@ -294,14 +307,22 @@ private[spark] object ReliableCheckpointRDD extends Logging {
       sc: SparkContext,
       checkpointDirPath: String): Option[Partitioner] = {
     try {
+
+      // private[spark] val BUFFER_SIZE =
+      // ...
+      // .createWithDefault(65536)
       val bufferSize = sc.conf.get(BUFFER_SIZE)
+
+      //将checkpoint目录路径和要读的分区器文件名，拼成一个Path对象返回
       val partitionerFilePath = new Path(checkpointDirPath, checkpointPartitionerFileName)
       val fs = partitionerFilePath.getFileSystem(sc.hadoopConfiguration)
       val fileInputStream = fs.open(partitionerFilePath, bufferSize)
       val serializer = SparkEnv.get.serializer.newInstance()
       val partitioner = Utils.tryWithSafeFinally {
+//deserializeStream是DeserializationStream子类对象：读取序列化对象的流
         val deserializeStream = serializer.deserializeStream(fileInputStream)
         Utils.tryWithSafeFinally {
+          //读取Partitioner对象
           deserializeStream.readObject[Partitioner]
         } {
           deserializeStream.close()

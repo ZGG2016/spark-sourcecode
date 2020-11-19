@@ -2,13 +2,13 @@
 
 ## 1、源码
 
-PairRDDFunctions.scala
+RDD.scala
 
 ```java
   /**
    * 标记这个RDD做checkpoint。
    * 将会存储到`SparkContext#setCheckpointDir`指定的目录下的文件中。
-   * 所有对它的父RDD的引用都会被移除。
+   * 所有对它的父RDD的引用都会被移除。【切断依赖】
    * 必须在这个RDD上执行任何job之前调用此函数。
    * 建议将这个RDD持久化到内存，否则，将其保存到文件中将需要重新计算。
    *
@@ -30,6 +30,7 @@ PairRDDFunctions.scala
     	//将RDD数据写入到可靠存储的checkpoint的实现
       checkpointData = Some(new ReliableRDDCheckpointData(this))
     }
+//private[spark] var checkpointData: Option[RDDCheckpointData[T]] = None
   }
 ```
 
@@ -56,7 +57,7 @@ object CheckpointTest {
 
 //输出
 /**
- * 目录: C:\Users\zgg\Desktop\ScalaCode\src\main\resources\checkpoint\975336d8-f3c2-4e7b-a14a-585e3fd20d9d\rdd-1
+ * 目录: C:\...\ScalaCode\src\main\resources\checkpoint\975336d8-f3c2-4e7b-a14a-585e3fd20d9d\rdd-1
  *
  *
  * Mode          LastWriteTime                   Length   Name

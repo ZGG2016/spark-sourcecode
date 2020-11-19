@@ -6,7 +6,7 @@
   /**
    *  RDD和它的元素索引组合。
    *
-   *  顺序首先根据分区索引，然后根据每个分区中的项的顺序。
+   *  顺序是首先根据分区索引，然后根据每个分区中的项的顺序。
    *  所以，第一个分区的第一项索引是0，最后一个分区的最后一项索引是最大的索引。
    *
    * Zips this RDD with its element indices. The ordering is first based on the partition index

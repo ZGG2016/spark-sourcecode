@@ -42,25 +42,7 @@ private[spark] class ReliableRDDCheckpointData[T: ClassTag](@transient private v
     }
   }
 
-/**
- * 判断此RDD是否可靠地或本地地被checkpoint和物化。
- * Return whether this RDD is checkpointed and materialized, either reliably or locally.
- * 
- * def isCheckpointed: Boolean = isCheckpointedAndMaterialized
- *
- * 
- *  Return whether this RDD is checkpointed and materialized, either reliably or locally.
- *  This is introduced as an alias for `isCheckpointed` to clarify the semantics of the
- *  return value. Exposed for testing.
- * 它是作为 `ischeckpoint` 的别名引入的，以澄清返回值的语义。
- * private[spark] def isCheckpointedAndMaterialized: Boolean =
- * checkpointData.exists(_.isCheckpointed)
- *
- *  //不空且有值才返回true
- *  @inline final def exists(p: A => Boolean): Boolean =
- *   	!isEmpty && p(this.get)
- *
- *  
+/** 
  * Return whether the checkpoint  data for this RDD is already persisted.
  *  这个RDD的checkpoint数据是否已经持久化了。 
  * def isCheckpointed: Boolean = RDDCheckpointData.synchronized {
@@ -79,7 +61,7 @@ private[spark] class ReliableRDDCheckpointData[T: ClassTag](@transient private v
     val newRDD = ReliableCheckpointRDD.writeRDDToCheckpointDirectory(rdd, cpDir)
 
     // Optionally clean our checkpoint files if the reference is out of scope
-    //如果引用超出范围,清理checkpoint文件
+    //如果引用超出范围,清理checkpoint文件 ？？？
     if (rdd.conf.get(CLEANER_REFERENCE_TRACKING_CLEAN_CHECKPOINTS)) {
       rdd.context.cleaner.foreach { cleaner =>
       // Register a RDDCheckpointData for cleanup when it is garbage collected.

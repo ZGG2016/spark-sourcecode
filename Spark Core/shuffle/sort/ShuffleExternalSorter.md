@@ -6,33 +6,7 @@ package org.apache.spark.shuffle.sort;
 import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
-import java.util.LinkedList;
-
-import scala.Tuple2;
-
-import com.google.common.annotations.VisibleForTesting;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import org.apache.spark.SparkConf;
-import org.apache.spark.TaskContext;
-import org.apache.spark.executor.ShuffleWriteMetrics;
-import org.apache.spark.internal.config.package$;
-import org.apache.spark.memory.MemoryConsumer;
-import org.apache.spark.memory.SparkOutOfMemoryError;
-import org.apache.spark.memory.TaskMemoryManager;
-import org.apache.spark.memory.TooLargePageException;
-import org.apache.spark.serializer.DummySerializerInstance;
-import org.apache.spark.serializer.SerializerInstance;
-import org.apache.spark.storage.BlockManager;
-import org.apache.spark.storage.DiskBlockObjectWriter;
-import org.apache.spark.storage.FileSegment;
-import org.apache.spark.storage.TempShuffleBlockId;
-import org.apache.spark.unsafe.Platform;
-import org.apache.spark.unsafe.UnsafeAlignedOffset;
-import org.apache.spark.unsafe.array.LongArray;
-import org.apache.spark.unsafe.memory.MemoryBlock;
-import org.apache.spark.util.Utils;
+....
 
 /**
  * An external sorter that is specialized for sort-based shuffle.
