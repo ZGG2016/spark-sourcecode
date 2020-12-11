@@ -6,7 +6,8 @@ package org.apache.spark.shuffle
 /**
  * 对每个shuffle，报告shuffle读取指标。
  *
- * 假设调用的所有方法都在一个线程上执行。
+ * 假设调用的所有方法都在一个线程上执行。如，具体的实现不需要异步。
+ * 
  * An interface for reporting shuffle read metrics, for each shuffle. This interface assumes
  * all the methods are called on a single-threaded, i.e. concrete implementations would not need
  * to synchronize.

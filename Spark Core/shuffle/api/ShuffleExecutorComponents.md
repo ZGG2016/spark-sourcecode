@@ -10,9 +10,11 @@ import java.util.Optional;
 import org.apache.spark.annotation.Private;
 
 /**
+ * 为Executors，构建的支持shuffle的接口。
+ *
  * :: Private ::
  * An interface for building shuffle support for Executors.
- * 为Executors，构建的支持shuffle的接口。
+ * 
  * @since 3.0.0
  */
 @Private

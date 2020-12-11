@@ -249,6 +249,7 @@ private[spark] object SortShuffleManager extends Logging {
    */
   val MAX_SHUFFLE_OUTPUT_PARTITIONS_FOR_SERIALIZED_MODE =
     PackedRecordPointer.MAXIMUM_PARTITION_ID + 1
+    //MAXIMUM_PARTITION_ID：可以被编码的最大分区标识符。分区id从0开始。
 
   /**
    * The local property key for continuous shuffle block fetching feature.
@@ -308,6 +309,8 @@ private[spark] object SortShuffleManager extends Logging {
 /**
  * Subclass of [[BaseShuffleHandle]], used to identify when we've chosen to use the
  * serialized shuffle.
+ *
+ * BaseShuffleHandle 的子类，用来识别什么时候使用serialized shuffle
  */
 private[spark] class SerializedShuffleHandle[K, V](
   shuffleId: Int,

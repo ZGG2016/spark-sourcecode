@@ -12,8 +12,8 @@ import org.apache.spark.{Partition, TaskContext}
  *
  * An RDD that applies the provided function to every partition of the parent RDD.
  *
- * @param prev the parent RDD.   父rdd
- * @param f The function used to map a tuple of (TaskContext, partition index, input iterator) to 
+ * @param prev the parent RDD.
+ * @param f The function used to map a tuple of (TaskContext, partition index, input iterator) to
  *          an output iterator.
  *
  * 将 (TaskContext, partition index, input iterator) 映射成一个输出迭代器的函数
@@ -33,10 +33,8 @@ import org.apache.spark.{Partition, TaskContext}
  * @param isOrderSensitive whether or not the function is order-sensitive. If it's order
  *                         sensitive, it may return totally different result when the input order
  *                         is changed. Mostly stateful functions are order-sensitive.
- * 
  * 函数是否对顺序敏感。如果是，那么当输入顺序变化了，计算结果就会完全不同。
  * 大多数状态函数是顺序敏感
- *
  */
 private[spark] class MapPartitionsRDD[U: ClassTag, T: ClassTag](
     var prev: RDD[T],
@@ -45,19 +43,20 @@ private[spark] class MapPartitionsRDD[U: ClassTag, T: ClassTag](
     isFromBarrier: Boolean = false,
     isOrderSensitive: Boolean = false)
 // Construct an RDD with just a one-to-one dependency on one parent  没有shuffle
-  extends RDD[U](prev) { 
+  extends RDD[U](prev) {
 
 // firstParent:Returns the first parent RDD
 // 如果保留父rdd的分区信息，就取出，否则就是None
   override val partitioner = if (preservesPartitioning) firstParent[T].partitioner else None
+
 // partitions:Get the array of partitions of this RDD
   override def getPartitions: Array[Partition] = firstParent[T].partitions
 
   override def compute(split: Partition, context: TaskContext): Iterator[U] =
     f(context, split.index, firstParent[T].iterator(split, context))
 
-  override def clearDependencies() {
-    super.clearDependencies()  // 移除和这个rdd相关的所有依赖
+  override def clearDependencies(): Unit = {
+    super.clearDependencies() // 移除和这个rdd相关的所有依赖
     prev = null
   }
 
@@ -79,6 +78,7 @@ private[spark] class MapPartitionsRDD[U: ClassTag, T: ClassTag](
 ```
 
 RDD下的outputDeterministicLevel、getOutputDeterministicLevel
+
 
 ```java
   /**
@@ -102,7 +102,7 @@ RDD下的outputDeterministicLevel、getOutputDeterministicLevel
     }
   }
 
-  /**
+    /**
    * outputDeterministicLevel：
    * 默认情况下，
    *    对于一个可靠的、checkpointed 的rdd，或者没有父的rdd，输出是DETERMINATE。
@@ -110,31 +110,32 @@ RDD下的outputDeterministicLevel、getOutputDeterministicLevel
    * 
    */
 
+
   @DeveloperApi
   protected def getOutputDeterministicLevel: DeterministicLevel.Value = {
     val deterministicLevelCandidates = dependencies.map {
       // The shuffle is not really happening, treat it like narrow dependency and assume the output
       // deterministic level of current RDD is same as parent.
-   // shuffle并不会真的发生，把它当作窄依赖，假定当前rdd的输出层级和父rdd的相同。
+    // shuffle并不会真的发生，把它当作窄依赖，假定当前rdd的输出层级和父rdd的相同。
       case dep: ShuffleDependency[_, _, _] if dep.rdd.partitioner.exists(_ == dep.partitioner) =>
         dep.rdd.outputDeterministicLevel
 
       case dep: ShuffleDependency[_, _, _] =>
         if (dep.rdd.outputDeterministicLevel == DeterministicLevel.INDETERMINATE) {
           // If map output was indeterminate, shuffle output will be indeterminate as well
-        //如果map输出是indeterminate，shuffle输出将也是indeterminate
+         //如果map输出是indeterminate，shuffle输出将也是indeterminate
           DeterministicLevel.INDETERMINATE
         } else if (dep.keyOrdering.isDefined && dep.aggregator.isDefined) {
           // if aggregator specified (and so unique keys) and key ordering specified - then
           // consistent ordering.
-      // 如果指定了aggregator和key ordering ，那么就一直有序
+         // 如果指定了aggregator和key ordering ，那么就一直有序
           DeterministicLevel.DETERMINATE
         } else {
           // In Spark, the reducer fetches multiple remote shuffle blocks at the same time, and
           // the arrival order of these shuffle blocks are totally random. Even if the parent map
           // RDD is DETERMINATE, the reduce RDD is always UNORDERED.
-   // spark中，reducer同时获取多个远程shuffle块，这些块的到达顺序完全随机。
-   // 即使父rdd是DETERMINATE，那么reduce RDD总是UNORDERED。
+         // spark中，reducer同时获取多个远程shuffle块，这些块的到达顺序完全随机。
+         // 即使父rdd是DETERMINATE，那么reduce RDD总是UNORDERED。
           DeterministicLevel.UNORDERED
         }
 
@@ -144,7 +145,7 @@ RDD下的outputDeterministicLevel、getOutputDeterministicLevel
       case dep => dep.rdd.outputDeterministicLevel
     }
 
-// 候选集是空，输出级别就是DETERMINATE。
+	// 候选集是空，输出级别就是DETERMINATE。
     if (deterministicLevelCandidates.isEmpty) {
       // By default we assume the root RDD is determinate.
       DeterministicLevel.DETERMINATE
@@ -152,7 +153,6 @@ RDD下的outputDeterministicLevel、getOutputDeterministicLevel
       deterministicLevelCandidates.maxBy(_.id) //（???）
     }
   }
-
 ```
 
 ```java
@@ -171,7 +171,6 @@ private[spark] object DeterministicLevel extends Enumeration {
   val DETERMINATE, UNORDERED, INDETERMINATE = Value
 }
 
-
 /**
  * RDD 输出的确定性级别(如：RDD.compute 返回的)。
  *
@@ -184,5 +183,4 @@ private[spark] object DeterministicLevel extends Enumeration {
  * 注意：由于rdd的输出通常依赖于父rdds，当父rdd的输出是INDETERMINATE，那么这个rdd的输出
  *       很可能也是INDETERMINATE。
  */
-
 ```

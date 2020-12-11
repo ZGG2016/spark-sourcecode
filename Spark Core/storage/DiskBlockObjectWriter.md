@@ -155,10 +155,14 @@ private[spark] class DiskBlockObjectWriter(
   }
 
   /**
+   * 刷新部分写操作，并将它们作为一个原子块提交。
+   *
+   *
    * Flush the partial writes and commit them as a single atomic block.
    * A commit may write additional bytes to frame the atomic block.
    *
    * @return file segment with previous offset and length committed on this call.
+   *         这次调用中提交的具有先前偏移量和长度的文件段。
    */
   def commitAndGet(): FileSegment = {
     if (streamOpen) {
@@ -255,6 +259,7 @@ private[spark] class DiskBlockObjectWriter(
   }
 
   /**
+   * 通知writer已经用OutputStream#write写入了一个值为字节的记录。
    * Notify the writer that a record worth of bytes has been written with OutputStream#write.
    */
   def recordWritten(): Unit = {

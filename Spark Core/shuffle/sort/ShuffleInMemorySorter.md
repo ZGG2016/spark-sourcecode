@@ -14,6 +14,7 @@ import org.apache.spark.util.collection.unsafe.sort.RadixSort;
 
 final class ShuffleInMemorySorter {
 
+  //排序分区ids
   private static final class SortComparator implements Comparator<PackedRecordPointer> {
     @Override
     public int compare(PackedRecordPointer left, PackedRecordPointer right) {
@@ -27,9 +28,15 @@ final class ShuffleInMemorySorter {
   private final MemoryConsumer consumer;
 
   /**
+   * PackedRecordPointer 编码的记录指针和分区ids的数组。
+   * 先排序这个数组，而不是直接操作记录。
+   *
+   *
    * An array of record pointers and partition ids that have been encoded by
    * {@link PackedRecordPointer}. The sort operates on this array instead of directly manipulating
    * records.
+   *
+   * 数组的一部分存储指针，剩余部分用于排序的临时缓存保留。
    *
    * Only part of the array will be used to store the pointers, the rest part is preserved as
    * temporary buffer for sorting.
@@ -37,12 +44,18 @@ final class ShuffleInMemorySorter {
   private LongArray array;
 
   /**
+   * 是否使用基数排序，来对内存中的分区ids排序。
+   *
+   * 基数排序更快，但当添加指针时，需要保留额外的内存。
+   *
    * Whether to use radix sort for sorting in-memory partition ids. Radix sort is much faster
    * but requires additional memory to be reserved memory as pointers are added.
    */
   private final boolean useRadixSort;
 
   /**
+   * 新纪录插入的指针数组中的位置
+   *
    * The position in the pointer array where new records can be inserted.
    */
   private int pos = 0;
@@ -71,7 +84,7 @@ final class ShuffleInMemorySorter {
 
   public void free() {
     if (array != null) {
-      consumer.freeArray(array);
+      consumer.freeArray(array); //释放一个LongArray
       array = null;
     }
   }
@@ -138,42 +151,51 @@ final class ShuffleInMemorySorter {
   }
 
   /**
+   * 使用的像迭代器的一个类，而没有使用java迭代器。
+   *
    * An iterator-like class that's used instead of Java's Iterator in order to facilitate inlining.
    */
   public static final class ShuffleSorterIterator {
 
+    //PackedRecordPointer 编码的记录指针和分区ids的数组。
     private final LongArray pointerArray;
     private final int limit;
+    //封装了一个8字节的字，包含了一个24bit的分区数字和40bit的记录指针。
     final PackedRecordPointer packedRecordPointer = new PackedRecordPointer();
     private int position = 0;
 
     ShuffleSorterIterator(int numRecords, LongArray pointerArray, int startingPosition) {
-      this.limit = numRecords + startingPosition;
+      this.limit = numRecords + startingPosition; //起始位置加上记录数
       this.pointerArray = pointerArray;
       this.position = startingPosition;
     }
 
     public boolean hasNext() {
-      return position < limit;
+      return position < limit; //小于极限值
     }
 
     public void loadNext() {
       packedRecordPointer.set(pointerArray.get(position));
-      position++;
+      position++;  //位置+1
     }
   }
 
   /**
+   * 按顺序，返回记录指针上的迭代器
+   *
    * Return an iterator over record pointers in sorted order.
    */
   public ShuffleSorterIterator getSortedIterator() {
     int offset = 0;
-    if (useRadixSort) {
+    //useRadixSort：是否使用基数排序，来对内存中的分区ids排序。
+    if (useRadixSort) { 
+      //直接使用基数排序
       offset = RadixSort.sort(
         array, pos,
         PackedRecordPointer.PARTITION_ID_START_BYTE_INDEX,
         PackedRecordPointer.PARTITION_ID_END_BYTE_INDEX, false, false);
     } else {
+      //MemoryBlock：连续的内存块
       MemoryBlock unused = new MemoryBlock(
         array.getBaseObject(),
         array.getBaseOffset() + pos * 8L,
@@ -181,8 +203,9 @@ final class ShuffleInMemorySorter {
       LongArray buffer = new LongArray(unused);
       Sorter<PackedRecordPointer, LongArray> sorter =
         new Sorter<>(new ShuffleSortDataFormat(buffer));
-
-      sorter.sort(array, 0, pos, SORT_COMPARATOR);
+//Sorter：对java TimSort 的简单封装
+//SortDataFormat：排序任意的数据输入缓存的一个抽象。
+      sorter.sort(array, 0, pos, SORT_COMPARATOR); 
     }
     return new ShuffleSorterIterator(pos, array, offset);
   }

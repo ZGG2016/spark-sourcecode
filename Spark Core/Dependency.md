@@ -1,9 +1,6 @@
 # Dependency
 
-**spark-2.4.4-bin-hadoop2.7**
-
 ```java
-
 package org.apache.spark
 
 import scala.reflect.ClassTag
@@ -11,7 +8,7 @@ import scala.reflect.ClassTag
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
 import org.apache.spark.serializer.Serializer
-import org.apache.spark.shuffle.ShuffleHandle
+import org.apache.spark.shuffle.{ShuffleHandle, ShuffleWriteProcessor}
 
 /**
  * :: DeveloperApi ::
@@ -29,7 +26,7 @@ abstract class Dependency[T] extends Serializable {
  * of partitions of the parent RDD. Narrow dependencies allow for pipelined execution.
  * 
  * 子RDD的每个分区依赖于父RDD的少量的分区。窄依赖允许管道执行。
- * 
+ *
  */
 @DeveloperApi
 abstract class NarrowDependency[T](_rdd: RDD[T]) extends Dependency[T] {
@@ -46,12 +43,12 @@ abstract class NarrowDependency[T](_rdd: RDD[T]) extends Dependency[T] {
 
 
 /**
- *  一个 shuffle stage 输出的依赖
+ * 一个 shuffle stage 输出的依赖
  *
  * 在 shuffle 中，因为在 executor 端不需要这个rdd，所以这个rdd是不可序列化的
  *
  * :: DeveloperApi ::
- * Represents a dependency on the output of a shuffle stage. Note that in the case of shuffle, 
+ * Represents a dependency on the output of a shuffle stage. Note that in the case of shuffle,
  * the RDD is transient since we don't need it on the executor side.
  *
  * @param _rdd the parent RDD
@@ -62,18 +59,20 @@ abstract class NarrowDependency[T](_rdd: RDD[T]) extends Dependency[T] {
  * @param keyOrdering key ordering for RDD's shuffles
  * @param aggregator map/reduce-side aggregator for RDD's shuffle
  * @param mapSideCombine whether to perform partial aggregation (also known as map-side combine)
+ * @param shuffleWriterProcessor the processor to control the write behavior in ShuffleMapTask
  */
 @DeveloperApi
 class ShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
     @transient private val _rdd: RDD[_ <: Product2[K, V]],  //父RDD
-    val partitioner: Partitioner, //用来划分 shuffle 输出的分区器
+    val partitioner: Partitioner,  //用来划分 shuffle 输出的分区器
     val serializer: Serializer = SparkEnv.get.serializer,
     val keyOrdering: Option[Ordering[K]] = None, // RDD's shuffles中，key 的排序方式
-    val aggregator: Option[Aggregator[K, V, C]] = None,  //map/reduce-side 的聚合器
-    val mapSideCombine: Boolean = false)  //是否执行map端聚合
+    val aggregator: Option[Aggregator[K, V, C]] = None, //map/reduce-side 的聚合器
+    val mapSideCombine: Boolean = false, //是否执行map端聚合
+    val shuffleWriterProcessor: ShuffleWriteProcessor = new ShuffleWriteProcessor)
   extends Dependency[Product2[K, V]] {
 
-  //如果要执行map端聚合，需要定义aggregator
+//如果要执行map端聚合，需要定义aggregator
   if (mapSideCombine) {
     require(aggregator.isDefined, "Map-side combine without Aggregator specified!")
   }
@@ -89,9 +88,10 @@ class ShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
   val shuffleId: Int = _rdd.context.newShuffleId()
 
   val shuffleHandle: ShuffleHandle = _rdd.context.env.shuffleManager.registerShuffle(
-    shuffleId, _rdd.partitions.length, this)
+    shuffleId, this)
 
   _rdd.sparkContext.cleaner.foreach(_.registerShuffleForCleanup(this))
+  _rdd.sparkContext.shuffleDriverComponents.registerShuffle(shuffleId)
 }
 
 
@@ -128,4 +128,5 @@ class RangeDependency[T](rdd: RDD[T], inStart: Int, outStart: Int, length: Int)
     }
   }
 }
+
 ```

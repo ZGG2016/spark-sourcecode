@@ -9,13 +9,10 @@ import org.apache.spark.util.collection.ExternalAppendOnlyMap
 /**
  * :: DeveloperApi ::
  * A set of functions used to aggregate data. 聚合数据的函数集合
- * 
- *                       创建聚合初始值的函数
- * @param createCombiner function to create the initial value of the aggregation.
- *                      合并一个新值到聚合结果的函数
- * @param mergeValue function to merge a new value into the aggregation result.
- *                         从多个 mergeValue function 中，合并输出的函数。
- * @param mergeCombiners function to merge outputs from multiple mergeValue function.
+ *
+ * @param createCombiner function to create the initial value of the aggregation.创建聚合初始值的函数
+ * @param mergeValue function to merge a new value into the aggregation result.合并一个新值到聚合结果的函数
+ * @param mergeCombiners function to merge outputs from multiple mergeValue function.从多个 mergeValue function 中，合并输出的函数。
  */
 @DeveloperApi
 case class Aggregator[K, V, C] (
@@ -35,6 +32,7 @@ case class Aggregator[K, V, C] (
   def combineCombinersByKey(
       iter: Iterator[_ <: Product2[K, C]],
       context: TaskContext): Iterator[(K, C)] = {
+
   	//ExternalAppendOnlyMap：一个仅能追加的 map ，当空间不够时，将有序内容写入到磁盘。
     val combiners = new ExternalAppendOnlyMap[K, C, C](identity, mergeCombiners, mergeCombiners)
     combiners.insertAll(iter)

@@ -6,7 +6,14 @@ package org.apache.spark.shuffle.sort;
 import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
-....
+import java.util.LinkedList;
+
+import scala.Tuple2;
+
+import com.google.common.annotations.VisibleForTesting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+...
 
 /**
  * An external sorter that is specialized for sort-based shuffle.
@@ -35,7 +42,7 @@ final class ShuffleExternalSorter extends MemoryConsumer {
   private final TaskMemoryManager taskMemoryManager;
   private final BlockManager blockManager;
   private final TaskContext taskContext;
-  private final ShuffleWriteMetrics writeMetrics;
+  private final ShuffleWriteMetricsReporter writeMetrics;
 
   /**
    * Force this sorter to spill when there are this many elements in memory.
@@ -54,11 +61,19 @@ final class ShuffleExternalSorter extends MemoryConsumer {
    * this might not be necessary if we maintained a pool of re-usable pages in the TaskMemoryManager
    * itself).
    */
+
+  // 存储正在排序的记录的内存页。
+  //这个list中的页面在溢写时被释放，
+  //尽管原则上我们可以跨spills回收这些页面(另一方面，如果我们在TaskMemoryManager中维护一个可重用页面池，这可能没有必要)。
+
+  //MemoryBlock：连续的内存块 【一个page是一个MemoryBlock】
   private final LinkedList<MemoryBlock> allocatedPages = new LinkedList<>();
 
+  //SpillInfo：ShuffleExternalSorter写入的数据的一个块的元数据
   private final LinkedList<SpillInfo> spills = new LinkedList<>();
 
   /** Peak memory used by this sorter so far, in bytes. **/
+  //这个sorter到目前为止使用的峰值内存，字节形式。  
   private long peakMemoryUsedBytes;
 
   // These variables are reset after spilling:
@@ -73,7 +88,7 @@ final class ShuffleExternalSorter extends MemoryConsumer {
       int initialSize,
       int numPartitions,
       SparkConf conf,
-      ShuffleWriteMetrics writeMetrics) {
+      ShuffleWriteMetricsReporter writeMetrics) {
     super(memoryManager,
       (int) Math.min(PackedRecordPointer.MAXIMUM_PAGE_SIZE_BYTES, memoryManager.pageSizeBytes()),
       memoryManager.getTungstenMemoryMode());
@@ -88,98 +103,151 @@ final class ShuffleExternalSorter extends MemoryConsumer {
         (int) conf.get(package$.MODULE$.SHUFFLE_SPILL_NUM_ELEMENTS_FORCE_SPILL_THRESHOLD());
     this.writeMetrics = writeMetrics;
     this.inMemSorter = new ShuffleInMemorySorter(
-      this, initialSize, conf.getBoolean("spark.shuffle.sort.useRadixSort", true));
+      this, initialSize, (boolean) conf.get(package$.MODULE$.SHUFFLE_SORT_USE_RADIXSORT()));
     this.peakMemoryUsedBytes = getMemoryUsage();
     this.diskWriteBufferSize =
         (int) (long) conf.get(package$.MODULE$.SHUFFLE_DISK_WRITE_BUFFER_SIZE());
   }
 
   /**
+   * 先排序内存中的记录，再将排序后的记录写入到一个磁盘上的文件。
+   * 这个方法不会释放sort data structures
+   *
    * Sorts the in-memory records and writes the sorted records to an on-disk file.
    * This method does not free the sort data structures.
    *
    * @param isLastFile if true, this indicates that we're writing the final output file and that the
    *                   bytes written should be counted towards shuffle spill metrics rather than
    *                   shuffle write metrics.
+   * 如果是true，表明我们正在写最后的输出文件，
+   *     写入的字节应该计入 shuffle spill metrics，而不是 shuffle write metrics.
    */
   private void writeSortedFile(boolean isLastFile) {
 
-    final ShuffleWriteMetrics writeMetricsToUse;
+    // This call performs the actual sort.
+    // 此步是真正执行了排序 （基数排序和tim排序）
+    final ShuffleInMemorySorter.ShuffleSorterIterator sortedRecords =
+      inMemSorter.getSortedIterator();
+
+    // If there are no sorted records, so we don't need to create an empty spill file.
+    //如果没有了排序了的记录，就不会再创建一个空的溢写文件。
+    if (!sortedRecords.hasNext()) {
+      return;
+    }
+
+    //ShuffleWriteMetricsReporter：对每个shuffle，报告shuffle写入指标
+    final ShuffleWriteMetricsReporter writeMetricsToUse;
 
     if (isLastFile) {
       // We're writing the final non-spill file, so we _do_ want to count this as shuffle bytes.
+      //我们正在写最后的非溢写文件，所以我们想把这个计数为shuffle字节。
       writeMetricsToUse = writeMetrics;
     } else {
       // We're spilling, so bytes written should be counted towards spill rather than write.
       // Create a dummy WriteMetrics object to absorb these metrics, since we don't want to count
       // them towards shuffle bytes written.
+      //我们正在溢写，应该把写入的字节计数为spill，而不是write
+      //创建一个虚拟的WriteMetrics对象来吸收这些度量，因为我们不想将它们计算到写入的shuffle字节中。
       writeMetricsToUse = new ShuffleWriteMetrics();
     }
-
-    // This call performs the actual sort.
-    final ShuffleInMemorySorter.ShuffleSorterIterator sortedRecords =
-      inMemSorter.getSortedIterator();
 
     // Small writes to DiskBlockObjectWriter will be fairly inefficient. Since there doesn't seem to
     // be an API to directly transfer bytes from managed memory to the disk writer, we buffer
     // data through a byte array. This array does not need to be large enough to hold a single
     // record;
+
+    // 对DiskBlockObjectWriter的小规模写操作将是相当低效的。
+    // 因为似乎没有API可以直接将字节从管理的内存中传输到磁盘写入器，
+    // 所以我们通过字节数组缓冲数据。这个数组不需要足够大，才能保存一条记录;
     final byte[] writeBuffer = new byte[diskWriteBufferSize];
 
     // Because this output will be read during shuffle, its compression codec must be controlled by
     // spark.shuffle.compress instead of spark.shuffle.spill.compress, so we need to use
     // createTempShuffleBlock here; see SPARK-3426 for more details.
+
+    // 因为这个输出在shuffle期间会被读取，它的压缩格式必须使用 spark.shuffle.compress 控制，
+    // 而不是 spark.shuffle.spill.compress，所有这里需要使用 createTempShuffleBlock
+
+    //createTempShuffleBlock：
+   //生成一个唯一的blockId，和适合用来存储shuffle的中间结果的文件。这个blockId对应于这个文件。
     final Tuple2<TempShuffleBlockId, File> spilledFileInfo =
       blockManager.diskBlockManager().createTempShuffleBlock();
     final File file = spilledFileInfo._2();
-    final TempShuffleBlockId blockId = spilledFileInfo._1();
+    final TempShuffleBlockId blockId = spilledFileInfo._1();、
+    //创建这个blockId对应的元数据。
+    //SpillInfo：ShuffleExternalSorter写入的数据的一个块的元数据
     final SpillInfo spillInfo = new SpillInfo(numPartitions, file, blockId);
 
     // Unfortunately, we need a serializer instance in order to construct a DiskBlockObjectWriter.
     // Our write path doesn't actually use this serializer (since we end up calling the `write()`
     // OutputStream methods), but DiskBlockObjectWriter still calls some methods on it. To work
     // around this, we pass a dummy no-op serializer.
+    //为了构造一个DiskBlockObjectWriter，需要一个序列化器实例。
+    //我们的写路径实际并没有使用这个序列化器(因为我们通过调用`write()`输出流方法来结束)，
+    //但DiskBlockObjectWriter仍会在序列化器上调用溢写方法
+
+    //DummySerializerInstance：虚拟的，无操作的序列化器
     final SerializerInstance ser = DummySerializerInstance.INSTANCE;
 
-    final DiskBlockObjectWriter writer =
-      blockManager.getDiskWriter(blockId, file, ser, fileBufferSizeBytes, writeMetricsToUse);
-
+    //当前分区编号
     int currentPartition = -1;
-    final int uaoSize = UnsafeAlignedOffset.getUaoSize();
-    while (sortedRecords.hasNext()) {
-      sortedRecords.loadNext();
-      final int partition = sortedRecords.packedRecordPointer.getPartitionId();
-      assert (partition >= currentPartition);
-      if (partition != currentPartition) {
-        // Switch to the new partition
-        if (currentPartition != -1) {
-          final FileSegment fileSegment = writer.commitAndGet();
-          spillInfo.partitionLengths[currentPartition] = fileSegment.length();
+    //根据一个偏移量和一个长度，定义一个文件的片段的引用。
+    final FileSegment committedSegment;
+    //DiskBlockObjectWriter：将JVM对象直接写入磁盘文件的类
+    try (DiskBlockObjectWriter writer =
+        blockManager.getDiskWriter(blockId, file, ser, fileBufferSizeBytes, writeMetricsToUse)) {
+
+      final int uaoSize = UnsafeAlignedOffset.getUaoSize();
+      while (sortedRecords.hasNext()) {
+        sortedRecords.loadNext(); //位置+1
+        final int partition = sortedRecords.packedRecordPointer.getPartitionId();
+        assert (partition >= currentPartition);
+        //取到的分区id不是当前分区
+        if (partition != currentPartition) {
+          // Switch to the new partition
+          if (currentPartition != -1) {
+          	//commitAndGet：刷新部分写操作，并将它们作为一个原子块提交。
+          	//返回 这次调用中提交的具有先前偏移量和长度的文件段。
+            final FileSegment fileSegment = writer.commitAndGet();
+            //当前分区的分区长度
+            spillInfo.partitionLengths[currentPartition] = fileSegment.length();
+          }
+          currentPartition = partition;
         }
-        currentPartition = partition;
-      }
 
-      final long recordPointer = sortedRecords.packedRecordPointer.getRecordPointer();
-      final Object recordPage = taskMemoryManager.getPage(recordPointer);
-      final long recordOffsetInPage = taskMemoryManager.getOffsetInPage(recordPointer);
-      int dataRemaining = UnsafeAlignedOffset.getSize(recordPage, recordOffsetInPage);
-      long recordReadPosition = recordOffsetInPage + uaoSize; // skip over record length
-      while (dataRemaining > 0) {
-        final int toTransfer = Math.min(diskWriteBufferSize, dataRemaining);
-        Platform.copyMemory(
-          recordPage, recordReadPosition, writeBuffer, Platform.BYTE_ARRAY_OFFSET, toTransfer);
-        writer.write(writeBuffer, 0, toTransfer);
-        recordReadPosition += toTransfer;
-        dataRemaining -= toTransfer;
+        final long recordPointer = sortedRecords.packedRecordPointer.getRecordPointer();
+
+        //获得和指定地址相关的page
+        final Object recordPage = taskMemoryManager.getPage(recordPointer);
+        //获得和指定地址相关的偏移量
+        final long recordOffsetInPage = taskMemoryManager.getOffsetInPage(recordPointer);
+        int dataRemaining = UnsafeAlignedOffset.getSize(recordPage, recordOffsetInPage);
+        long recordReadPosition = recordOffsetInPage + uaoSize; // skip over record length 跳过记录的长度
+        while (dataRemaining > 0) {
+          final int toTransfer = Math.min(diskWriteBufferSize, dataRemaining);
+
+//public static void copyMemory(Object src, long srcOffset, Object dst, long dstOffset, long length)
+
+          //复制到writeBuffer缓存里
+          Platform.copyMemory(
+            recordPage, recordReadPosition, writeBuffer, Platform.BYTE_ARRAY_OFFSET, toTransfer);
+          writer.write(writeBuffer, 0, toTransfer);
+          recordReadPosition += toTransfer;
+          dataRemaining -= toTransfer;
+        }
+        //通知writer已经用OutputStream#write写入了一个值为字节的记录。
+        writer.recordWritten();
       }
-      writer.recordWritten();
+      //刷新部分写操作，并将它们作为一个原子块提交。
+      committedSegment = writer.commitAndGet();
     }
-
-    final FileSegment committedSegment = writer.commitAndGet();
-    writer.close();
     // If `writeSortedFile()` was called from `closeAndGetSpills()` and no records were inserted,
     // then the file might be empty. Note that it might be better to avoid calling
     // writeSortedFile() in that case.
+
+    //如果从 `closeAndGetSpills()` 中调用 `writeSortedFile()`，且没有记录插入，
+    //那么文件可能为空。
+    //此时，避免调用`writeSortedFile()`可能更好。
     if (currentPartition != -1) {
       spillInfo.partitionLengths[currentPartition] = committedSegment.length();
       spills.add(spillInfo);
@@ -200,9 +268,14 @@ final class ShuffleExternalSorter extends MemoryConsumer {
       //
       // Note that we intentionally ignore the value of `writeMetricsToUse.shuffleWriteTime()`.
       // Consistent with ExternalSorter, we do not count this IO towards shuffle write time.
-      // This means that this IO time is not accounted for anywhere; SPARK-3577 will fix this.
-      writeMetrics.incRecordsWritten(writeMetricsToUse.recordsWritten());
-      taskContext.taskMetrics().incDiskBytesSpilled(writeMetricsToUse.bytesWritten());
+      // SPARK-3577 tracks the spill time separately.
+
+      // This is guaranteed to be a ShuffleWriteMetrics based on the if check in the beginning
+      // of this method.
+      writeMetrics.incRecordsWritten(
+        ((ShuffleWriteMetrics)writeMetricsToUse).recordsWritten());
+      taskContext.taskMetrics().incDiskBytesSpilled(
+        ((ShuffleWriteMetrics)writeMetricsToUse).bytesWritten());
     }
   }
 
@@ -236,6 +309,8 @@ final class ShuffleExternalSorter extends MemoryConsumer {
     for (MemoryBlock page : allocatedPages) {
       totalPageSize += page.size();
     }
+    // inMemSorter：ShuffleInMemorySorter实例
+    // 如果不空，取这个Sorter使用的内容加上数据使用的内存
     return ((inMemSorter == null) ? 0 : inMemSorter.getMemoryUsage()) + totalPageSize;
   }
 
@@ -247,6 +322,8 @@ final class ShuffleExternalSorter extends MemoryConsumer {
   }
 
   /**
+   * 返回到目前为止使用的峰值内存，以字节为单位。
+   *
    * Return the peak memory used so far, in bytes.
    */
   long getPeakMemoryUsedBytes() {
@@ -254,6 +331,7 @@ final class ShuffleExternalSorter extends MemoryConsumer {
     return peakMemoryUsedBytes;
   }
 
+  //释放的内存量
   private long freeMemory() {
     updatePeakMemoryUsed();
     long memoryFreed = 0;
@@ -337,6 +415,7 @@ final class ShuffleExternalSorter extends MemoryConsumer {
   }
 
   /**
+   * 将一条记录写入到 shuffle sorter
    * Write a record to the shuffle sorter.
    */
   public void insertRecord(Object recordBase, long recordOffset, int length, int partitionId)
@@ -367,17 +446,22 @@ final class ShuffleExternalSorter extends MemoryConsumer {
   }
 
   /**
+   * 关闭sorter，使所有缓冲的数据被排序，并写入磁盘。
+   *
    * Close the sorter, causing any buffered data to be sorted and written out to disk.
    *
    * @return metadata for the spill files written by this sorter. If no records were ever inserted
    *         into this sorter, then this will return an empty array.
-   * @throws IOException
+   *  返回这个sorter写的溢写文件的元数据。如果没有记录插入到这个sorter，那么返回空数组
    */
   public SpillInfo[] closeAndGetSpills() throws IOException {
     if (inMemSorter != null) {
       // Do not count the final file towards the spill count.
+     //先排序内存中的记录，再将排序后的记录写入到一个磁盘上的文件。
       writeSortedFile(true);
+      //释放块占用的内存
       freeMemory();
+      //释放inMemSorter占用的内存
       inMemSorter.free();
       inMemSorter = null;
     }

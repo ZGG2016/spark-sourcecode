@@ -1,7 +1,6 @@
 # ShuffleSortDataFormat
 
 ```java
-
 package org.apache.spark.shuffle.sort;
 
 import org.apache.spark.unsafe.Platform;

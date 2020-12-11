@@ -8,6 +8,7 @@ import java.io.File;
 import org.apache.spark.storage.TempShuffleBlockId;
 
 /**
+ * ShuffleExternalSorter 写入的数据的一个块的元数据
  * Metadata for a block of data written by {@link ShuffleExternalSorter}.
  */
 final class SpillInfo {

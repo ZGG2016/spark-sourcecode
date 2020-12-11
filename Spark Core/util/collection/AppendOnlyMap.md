@@ -1,23 +1,6 @@
 # AppendOnlyMap
 
 ```java
-/*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package org.apache.spark.util.collection
 
 import java.util.Comparator
@@ -205,7 +188,7 @@ class AppendOnlyMap[K, V](initialCapacity: Int = 64)
   override def size: Int = curSize
 
   /** Increase table size by 1, rehashing if necessary */
-  private def incrementSize() {
+  private def incrementSize(): Unit = {
     curSize += 1
     if (curSize > growThreshold) {
       growTable()
@@ -218,7 +201,7 @@ class AppendOnlyMap[K, V](initialCapacity: Int = 64)
   private def rehash(h: Int): Int = Hashing.murmur3_32().hashInt(h).asInt()
 
   /** Double the table's size and re-hash everything */
-  protected def growTable() {
+  protected def growTable(): Unit = {
     // capacity < MAXIMUM_CAPACITY (2 ^ 29) so capacity * 2 won't overflow
     val newCapacity = capacity * 2
     require(newCapacity <= MAXIMUM_CAPACITY, s"Can't contain more than ${growThreshold} elements")

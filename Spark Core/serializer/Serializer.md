@@ -55,15 +55,14 @@ abstract class Serializer {
    * Returns true if this serializer supports relocation of its serialized objects and false
    * otherwise. This should return true if and only if reordering the bytes of serialized objects
    * in serialization stream output is equivalent to having re-ordered those elements prior to
-   * serializing them. 
+   * serializing them. More specifically, the following should hold if a serializer supports
+   * relocation:
    *
-   * 如果这个序列化器支持序列化对象的重定位，就返回true，否则，返回false。
+   * 如果这个序列化器支持它的序列化对象的重定位，就返回true，否则，返回false。
    *
    * 当且仅当在序列化流输出中，对序列化对象的字节重新排序的顺序
    *     等同于在序列化之前重新排序这些元素的顺序时，应返回true。
    *
-   * More specifically, the following should hold if a serializer supports
-   * relocation:
    *
    * 如果一个序列化器支持重新定位，下面应该满足：
    *
@@ -120,7 +119,7 @@ abstract class SerializerInstance {
 
 /**
  * :: DeveloperApi ::
- * A stream for writing serialized objects.
+ * A stream for writing serialized objects.  写序列化对象的流
  */
 @DeveloperApi
 abstract class SerializationStream extends Closeable {
@@ -171,7 +170,7 @@ abstract class DeserializationStream extends Closeable {
       }
     }
 
-    override protected def close() {
+    override protected def close(): Unit = {
       DeserializationStream.this.close()
     }
   }
@@ -196,7 +195,7 @@ abstract class DeserializationStream extends Closeable {
       }
     }
 
-    override protected def close() {
+    override protected def close(): Unit = {
       DeserializationStream.this.close()
     }
   }

@@ -55,13 +55,13 @@ private[spark] trait SizeTracker {
    */
   protected def afterUpdate(): Unit = {
     numUpdates += 1
-    if (nextSampleNum == numUpdates) { 
+    if (nextSampleNum == numUpdates) {
       takeSample()
     }
   }
 
   /**
-   * Take a new sample of the current collection's size. 
+   * Take a new sample of the current collection's size.
    */
   private def takeSample(): Unit = {
     samples.enqueue(Sample(SizeEstimator.estimate(this), numUpdates))

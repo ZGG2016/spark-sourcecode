@@ -4,7 +4,7 @@
 package org.apache.spark.shuffle
 
 import org.apache.spark.network.buffer.ManagedBuffer
-import org.apache.spark.storage.ShuffleBlockId
+import org.apache.spark.storage.BlockId
 
 private[spark]
 /**
@@ -22,21 +22,26 @@ private[spark]
 trait ShuffleBlockResolver {
   type ShuffleId = Int
 
-  /**
-   * 为指定的 block 接收数据。
-   *
-   * Retrieve the data for the specified block. If the data for that block is not available,
-   * throws an unspecified exception.
-   */
 
 // ShuffleBlockId：
 //Format of the shuffle block ids (including data and index) should be kept in sync with
 // org.apache.spark.network.shuffle.ExternalShuffleBlockResolver#getBlockData().
 
-  def getBlockData(blockId: ShuffleBlockId): ManagedBuffer
+
+  /**
+   * 为指定的 block 接收数据。
+   *
+   * Retrieve the data for the specified block.
+   *
+   * When the dirs parameter is None then use the disk manager's local directories. Otherwise,
+   * read from the specified directories.
+   *
+   * If the data for that block is not available, throws an unspecified exception.
+   */
+    //ManagedBuffer这个接口为字节形式的数据提供了一个不可变的视图。
+  def getBlockData(blockId: BlockId, dirs: Option[Array[String]] = None): ManagedBuffer
 
   def stop(): Unit
 }
-
 
 ```

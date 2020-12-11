@@ -10,7 +10,8 @@ RDD.scala
    * Mark this RDD for persisting using the specified level.
    *
    * @param newLevel the target storage level
-   *                   当已设置了一个存储级别，判断是否允许使用新的一个存储级别覆盖旧的
+   *
+   * 当已设置了一个存储级别，判断是否允许使用新的一个存储级别覆盖旧的
    * @param allowOverride whether to override any existing level with the new one
    */
   private def persist(newLevel: StorageLevel, allowOverride: Boolean): this.type = {
@@ -21,7 +22,7 @@ RDD.scala
       throw new UnsupportedOperationException(
         "Cannot change storage level of an RDD after it was already assigned a level")
     }
-    //如果这个RDD是第一次被标记，就注册...。这个操作仅做一次。
+    //如果这个RDD是第一次被标记，就注册它。这个操作仅做一次。
     // If this is the first time this RDD is marked for persisting, register it
     // with the SparkContext for cleanups and accounting. Do this only once.
     if (storageLevel == StorageLevel.NONE) {

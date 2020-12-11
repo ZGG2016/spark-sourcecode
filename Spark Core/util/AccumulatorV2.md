@@ -25,6 +25,7 @@ private[spark] case class AccumulatorMetadata(
  * The base class for accumulators, that can accumulate inputs of type `IN`, and produce output of
  * type `OUT`.
  *
+ *
  * `OUT` 应该是一个能被原子的读取的类型(如, Int, Long)，
  *  或者是线程安全的(如,synchronized collections)，因此它会从其他线程中的读取。
  *
@@ -39,6 +40,7 @@ abstract class AccumulatorV2[IN, OUT] extends Serializable {
       sc: SparkContext,
       name: Option[String] = None,
       countFailedValues: Boolean = false): Unit = {
+
   	//this代表要注册的累加器
   	//元数据是null，才能注册。
     if (this.metadata != null) {
@@ -47,8 +49,9 @@ abstract class AccumulatorV2[IN, OUT] extends Serializable {
     //AccumulatorContext.newId()：为累加器创建一个全局唯一的id
     this.metadata = AccumulatorMetadata(AccumulatorContext.newId(), name, countFailedValues)
     AccumulatorContext.register(this)
-    //如果累加器在这注册了，它应该在活跃的 context cleaner 中注册以便进行清理，以避免内存泄漏。
-    //具体见AccumulatorContext
+
+ //如果累加器在这注册了，它应该在活跃的 context cleaner 中注册以便进行清理，以避免内存泄漏。
+ //具体见AccumulatorContext
     sc.cleaner.foreach(_.registerAccumulatorForCleanup(this))
   }
 
@@ -86,7 +89,6 @@ abstract class AccumulatorV2[IN, OUT] extends Serializable {
   final def name: Option[String] = {
     assertMetadataNotNull()
 
-    //？？
     if (atDriverSide) {
       metadata.name.orElse(AccumulatorContext.get(id).flatMap(_.metadata.name))
     } else {
@@ -110,8 +112,7 @@ abstract class AccumulatorV2[IN, OUT] extends Serializable {
    * Creates an [[AccumulableInfo]] representation of this [[AccumulatorV2]] with the provided
    * values.
    */
-
-  //AccumulableInfo：Information about an [[org.apache.spark.Accumulable]] modified during a task or stage.
+    //AccumulableInfo：Information about an [[org.apache.spark.Accumulable]] modified during a task or stage.
   private[spark] def toInfo(update: Option[Any], value: Option[Any]): AccumulableInfo = {
     val isInternal = name.exists(_.startsWith(InternalAccumulator.METRICS_PREFIX))
     new AccumulableInfo(id, name, update, value, isInternal, countFailedValues)
@@ -123,7 +124,7 @@ abstract class AccumulatorV2[IN, OUT] extends Serializable {
    * Returns if this accumulator is zero value or not. e.g. for a counter accumulator, 0 is zero
    * value; for a list accumulator, Nil is zero value.
    */
-  //判断这个累加器是不是0值。
+    //判断这个累加器是不是0值。
   def isZero: Boolean
 
   /**
@@ -134,8 +135,8 @@ abstract class AccumulatorV2[IN, OUT] extends Serializable {
    */
   def copyAndReset(): AccumulatorV2[IN, OUT] = {
     val copyAcc = copy()
-    copyAcc.reset()  //重置这个累加器为0值
-    copyAcc
+    copyAcc.reset()   //重置这个累加器为0值
+    copyAcc 
   }
 
   /**
@@ -235,7 +236,7 @@ private[spark] object AccumulatorContext extends Logging {
    * once the RDDs and user-code that reference them are cleaned up.
    * TODO: Don't use a global map; these should be tied to a SparkContext (SPARK-13051).
    */
-  /**
+    /**
    * 这是一个全局的map，保存着原始的累加器对象，这个对象是在driver端创建的。
    * 它保持着对这些对象的弱引用。
    * 一旦RDD和用户代码清除了对累加器的引用，那么它们能被垃圾回收。
@@ -261,7 +262,7 @@ private[spark] object AccumulatorContext extends Logging {
   def newId(): Long = nextId.getAndIncrement
 
   /** Returns the number of accumulators registered. Used in testing. */
-  //返回注册的累加器对象的数量
+    //返回注册的累加器对象的数量
   def numAccums: Int = originals.size
 
   /**
@@ -275,7 +276,8 @@ private[spark] object AccumulatorContext extends Logging {
    * If an [[AccumulatorV2]] with the same ID was already registered, this does nothing instead
    * of overwriting it. We will never register same accumulator twice, this is just a sanity check.
    */
-   /**
+
+  /**
    * 注册一个在driver端创建的累加器对象，为了能让它在executors上使用。
    *
    * 所有在这里注册的累加器可以被用作一个container，在多个任务间累加值。这就是DAGScheduler所做的。
@@ -290,8 +292,8 @@ private[spark] object AccumulatorContext extends Logging {
     originals.putIfAbsent(a.id, new jl.ref.WeakReference[AccumulatorV2[_, _]](a))
   }
 
-  /**
-   * Unregisters the [[AccumulatorV2]] with the given ID, if any.  取消注册
+  /** 
+   * Unregisters the [[AccumulatorV2]] with the given ID, if any. 取消注册
    */
   def remove(id: Long): Unit = {
     originals.remove(id)
@@ -308,7 +310,6 @@ private[spark] object AccumulatorContext extends Logging {
       None
     } else {
       // Since we are storing weak references, warn when the underlying data is not valid.
-      //get：return the object to which this reference refers
       val acc = ref.get
       if (acc eq null) {
         logWarning(s"Attempted to access garbage collected accumulator $id")
@@ -318,7 +319,8 @@ private[spark] object AccumulatorContext extends Logging {
   }
 
   /**
-   * Clears all registered [[AccumulatorV2]]s. For testing only. 清楚所有注册了的累加器
+   * 清除所有注册了的累加器
+   * Clears all registered [[AccumulatorV2]]s. For testing only.
    */
   def clear(): Unit = {
     originals.clear()
@@ -534,37 +536,6 @@ class CollectionAccumulator[T] extends AccumulatorV2[T, java.util.List[T]] {
     _list.clear()
     _list.addAll(newValue)
   }
-}
-
-
-class LegacyAccumulatorWrapper[R, T](
-    initialValue: R,
-    param: org.apache.spark.AccumulableParam[R, T]) extends AccumulatorV2[T, R] {
-  private[spark] var _value = initialValue  // Current value on driver
-
-  @transient private lazy val _zero = param.zero(initialValue)
-
-  override def isZero: Boolean = _value.asInstanceOf[AnyRef].eq(_zero.asInstanceOf[AnyRef])
-
-  override def copy(): LegacyAccumulatorWrapper[R, T] = {
-    val acc = new LegacyAccumulatorWrapper(initialValue, param)
-    acc._value = _value
-    acc
-  }
-
-  override def reset(): Unit = {
-    _value = _zero
-  }
-
-  override def add(v: T): Unit = _value = param.addAccumulator(_value, v)
-
-  override def merge(other: AccumulatorV2[T, R]): Unit = other match {
-    case o: LegacyAccumulatorWrapper[R, T] => _value = param.addInPlace(_value, o.value)
-    case _ => throw new UnsupportedOperationException(
-      s"Cannot merge ${this.getClass.getName} with ${other.getClass.getName}")
-  }
-
-  override def value: R = _value
 }
 
 ```

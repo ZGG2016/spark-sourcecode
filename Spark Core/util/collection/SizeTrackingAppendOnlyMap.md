@@ -1,12 +1,12 @@
 # SizeTrackingAppendOnlyMap
 
 ```java
+
 package org.apache.spark.util.collection
 
 /**
+ *  一个追踪自身大小的append-only map
  * An append-only map that keeps track of its estimated size in bytes.
- *
- * 一个追踪自身大小的map
  */
 private[spark] class SizeTrackingAppendOnlyMap[K, V]
   extends AppendOnlyMap[K, V] with SizeTracker
@@ -16,6 +16,7 @@ private[spark] class SizeTrackingAppendOnlyMap[K, V]
     super.afterUpdate()
   }
 
+  //调父类方法执行
   override def changeValue(key: K, updateFunc: (Boolean, V) => V): V = {
     val newValue = super.changeValue(key, updateFunc)
     super.afterUpdate()

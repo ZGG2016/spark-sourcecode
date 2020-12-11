@@ -1,6 +1,23 @@
 # PartitionwiseSampledRDDPartition
 
 ```java
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.spark.rdd
 
 import java.util.Random
@@ -27,9 +44,9 @@ class PartitionwiseSampledRDDPartition(val prev: Partition, val seed: Long)
  * a random sample of the records in the partition. The random seeds assigned to the samplers
  * are guaranteed to have different values.
  *
- * @param prev RDD to be sampled  要被抽样的RDD
- * @param sampler a random sampler   RandomSampler实例
- * @param preservesPartitioning whether the sampler preserves the partitioner of the parent RDD   子RDD是否和父RDD的分区一致。
+ * @param prev RDD to be sampled   要被抽样的RDD
+ * @param sampler a random sampler RandomSampler实例
+ * @param preservesPartitioning whether the sampler preserves the partitioner of the parent RDD  子RDD是否和父RDD的分区一致。
  * @param seed random seed
  * @tparam T input RDD item type
  * @tparam U sampled RDD item type
@@ -57,8 +74,8 @@ private[spark] class PartitionwiseSampledRDD[T: ClassTag, U: ClassTag](
   // preferredLocations：Get the preferred locations of a partition
     firstParent[T].preferredLocations(split.asInstanceOf[PartitionwiseSampledRDDPartition].prev)
 
-
   override def compute(splitIn: Partition, context: TaskContext): Iterator[U] = {
+
     val split = splitIn.asInstanceOf[PartitionwiseSampledRDDPartition]
     val thisSampler = sampler.clone
     thisSampler.setSeed(split.seed)
@@ -66,9 +83,8 @@ private[spark] class PartitionwiseSampledRDD[T: ClassTag, U: ClassTag](
     //过滤出来能被抽样的项
     thisSampler.sample(firstParent[T].iterator(split.prev, context))
   }
-}
 
-/**
+  /**
  * // take a random sample
  * def sample(items: Iterator[T]): Iterator[U] =
  *     items.filter(_ => sample > 0).asInstanceOf[Iterator[U]]
@@ -78,5 +94,14 @@ private[spark] class PartitionwiseSampledRDD[T: ClassTag, U: ClassTag](
  * //是否抽样下一项。返回下一项将被抽样的次数。如果未被抽样，则返回0。
  * def sample(): Int
  */
+
+  override protected def getOutputDeterministicLevel = {
+    if (prev.outputDeterministicLevel == DeterministicLevel.UNORDERED) {
+      DeterministicLevel.INDETERMINATE
+    } else {
+      super.getOutputDeterministicLevel
+    }
+  }
+}
 
 ```

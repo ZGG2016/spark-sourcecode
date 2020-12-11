@@ -1,23 +1,6 @@
 # ExternalAppendOnlyMap
 
 ```java
-/*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package org.apache.spark.util.collection
 
 import java.io._
@@ -32,7 +15,7 @@ import com.google.common.io.ByteStreams
 import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.executor.ShuffleWriteMetrics
-import org.apache.spark.internal.Logging
+import org.apache.spark.internal.{config, Logging}
 import org.apache.spark.serializer.{DeserializationStream, Serializer, SerializerManager}
 import org.apache.spark.storage.{BlockId, BlockManager}
 import org.apache.spark.util.CompletionIterator
@@ -106,21 +89,19 @@ class ExternalAppendOnlyMap[K, V, C](
    * NOTE: Setting this too low can cause excessive copying when serializing, since some serializers
    * grow internal data structures by growing + copying every time the number of objects doubles.
    */
-  private val serializerBatchSize = sparkConf.getLong("spark.shuffle.spill.batchSize", 10000)
+  private val serializerBatchSize = sparkConf.get(config.SHUFFLE_SPILL_BATCH_SIZE)
 
   // Number of bytes spilled in total
   private var _diskBytesSpilled = 0L
   def diskBytesSpilled: Long = _diskBytesSpilled
 
   // Use getSizeAsKb (not bytes) to maintain backwards compatibility if no units are provided
-  private val fileBufferSize =
-    sparkConf.getSizeAsKb("spark.shuffle.file.buffer", "32k").toInt * 1024
+  private val fileBufferSize = sparkConf.get(config.SHUFFLE_FILE_BUFFER_SIZE).toInt * 1024
 
   // Write metrics
   private val writeMetrics: ShuffleWriteMetrics = new ShuffleWriteMetrics()
 
   // Peak size of the in-memory map observed so far, in bytes
-  // 迄今观测到的 内存map的最大大小。
   private var _peakMemoryUsedBytes: Long = 0L
   def peakMemoryUsedBytes: Long = _peakMemoryUsedBytes
 
@@ -146,7 +127,7 @@ class ExternalAppendOnlyMap[K, V, C](
    * 将给定的键值对迭代器插入到 map
    *
    * Insert the given iterator of keys and values into the map.
-   * 
+   *
    * When the underlying map needs to grow, check if the global pool of shuffle memory has
    * enough room for this to happen. If so, allocate the memory required to grow the map;
    * otherwise, spill the in-memory map to disk. 内存不够，溢写磁盘。
@@ -154,7 +135,7 @@ class ExternalAppendOnlyMap[K, V, C](
    * The shuffle memory usage of the first trackMemoryThreshold entries is not tracked.
    */
   def insertAll(entries: Iterator[Product2[K, V]]): Unit = {
- //这里的 currentMap 是一个SizeTrackingAppendOnlyMap对象
+   //这里的 currentMap 是一个SizeTrackingAppendOnlyMap对象
  //An append-only map that keeps track of its estimated size in bytes.
     if (currentMap == null) {
       throw new IllegalStateException(
@@ -183,9 +164,10 @@ class ExternalAppendOnlyMap[K, V, C](
       if (maybeSpill(currentMap, estimatedSize)) {
         currentMap = new SizeTrackingAppendOnlyMap[K, C]
       }
+      
       //为这个 key 设置 value 为 updateFunc(hadValue, oldValue)。
-      currentMap.changeValue(curEntry._1, update)  
-      addElementsRead()  //用来检查溢写频数
+      currentMap.changeValue(curEntry._1, update)
+      addElementsRead() //用来检查溢写频数
     }
   }
 
@@ -390,7 +372,7 @@ class ExternalAppendOnlyMap[K, V, C](
     private def removeFromBuffer[T](buffer: ArrayBuffer[T], index: Int): T = {
       val elem = buffer(index)
       buffer(index) = buffer(buffer.size - 1)  // This also works if index == buffer.size - 1
-      buffer.reduceToSize(buffer.size - 1)
+      buffer.trimEnd(1)
       elem
     }
 
@@ -572,7 +554,7 @@ class ExternalAppendOnlyMap[K, V, C](
       item
     }
 
-    private def cleanup() {
+    private def cleanup(): Unit = {
       batchIndex = batchOffsets.length  // Prevent reading any other batch
       if (deserializeStream != null) {
         deserializeStream.close()

@@ -1,11 +1,6 @@
 # Partitioner
 
-**spark-2.4.4-bin-hadoop2.7**
-
-Partitioner.scala
-
 ```java
-
 package org.apache.spark
 
 import java.io.{IOException, ObjectInputStream, ObjectOutputStream}
@@ -27,6 +22,7 @@ import org.apache.spark.util.random.SamplingUtils
  * 一个定义了键值对 RDD 中的元素是如何根据 key 分区的对象。
  *
  * Maps each key to a partition ID, from 0 to `numPartitions - 1`.
+ *
  * 
  * 一个 key 对应一个 partition ID，从 0 到 `numPartitions - 1` （给每个分区编号）
  *
@@ -36,7 +32,7 @@ import org.apache.spark.util.random.SamplingUtils
  * partitioner 必须是确定的，例如，如果给定相同的分区编号，必须返回相同的分区。
  */
 abstract class Partitioner extends Serializable {
-  def numPartitions: Int  //RDD的分区数
+  def numPartitions: Int   //RDD的分区数
   def getPartition(key: Any): Int  //根据key获取分区编号，从 0 到 `numPartitions - 1`
 }
 
@@ -44,16 +40,18 @@ object Partitioner {
   /**
    * Choose a partitioner to use for a cogroup-like operation between a number of RDDs.
    *
-   * If spark.default.parallelism is set, we'll use the value of SparkContext defaultParallelism
-   * as the default partitions number, otherwise we'll use the max number of upstream partitions.
    *
    * 给定了 spark.default.parallelism ，
    * 就使用它作为默认分区数，否则，使用上游分区的最大数量。
    *
+   * If spark.default.parallelism is set, we'll use the value of SparkContext defaultParallelism
+   * as the default partitions number, otherwise we'll use the max number of upstream partitions.
+   *
    * When available, we choose the partitioner from rdds with maximum number of partitions. If this
    * partitioner is eligible (number of partitions within an order of maximum number of partitions
-   * in rdds), or has partition number higher than default partitions number - we use this
-   * partitioner.
+   * in rdds), or has partition number higher than or equal to default partitions number - we use
+   * this partitioner.
+   *
    *
    * 在使用时，选择具有最大分区数的rdds的partitioner，
    * 如果这个符合条件，或者分区数大于默认分区数，那么就使用它。
@@ -66,13 +64,14 @@ object Partitioner {
    * number of partitions in the largest upstream RDD, as this should be least likely to cause
    * out-of-memory errors.
    *
+   *
    * 除非设置了 spark.default.parallelism ，
    * 否则分区数和最大的上游RDD的分区数相同。 这种情况应该最不可能导致内存不足错误。
    *
    * We use two method parameters (rdd, others) to enforce callers passing at least 1 RDD.
    */
   def defaultPartitioner(rdd: RDD[_], others: RDD[_]*): Partitioner = {
-    //++ 用于连接集合
+  	//++ 用于连接集合
     val rdds = (Seq(rdd) ++ others)
 
     //过滤掉未分区的RDD  ？？？
@@ -113,10 +112,10 @@ object Partitioner {
     }
 
     // If the existing max partitioner is an eligible one, or its partitions number is larger
-    // than the default number of partitions, use the existing partitioner.
+    // than or equal to the default number of partitions, use the existing partitioner.
     // 如果已存在的最大分区器是合法的，或者它的分区数大于默认分区数，就使用已存在的分区器。
     if (hasMaxPartitioner.nonEmpty && (isEligiblePartitioner(hasMaxPartitioner.get, rdds) ||
-        defaultNumPartitions < hasMaxPartitioner.get.getNumPartitions)) {
+        defaultNumPartitions <= hasMaxPartitioner.get.getNumPartitions)) {
       hasMaxPartitioner.get.partitioner.get
     } else {
       new HashPartitioner(defaultNumPartitions)
@@ -127,13 +126,12 @@ object Partitioner {
    * Returns true if the number of partitions of the RDD is either greater than or is less than and
    * within a single order of magnitude of the max number of upstream partitions, otherwise returns
    * false.
-   *
    * 如果RDD的分区数量大于或小于上游分区的最大数量，并在一个数量级内，则返回true，否则返回false。
    */
   private def isEligiblePartitioner(
      hasMaxPartitioner: RDD[_],
      rdds: Seq[RDD[_]]): Boolean = {
-    //取具有最大分区数的RDD的分区数
+  	//取具有最大分区数的RDD的分区数
     val maxPartitions = rdds.map(_.partitions.length).max
     log10(maxPartitions) - log10(hasMaxPartitioner.getNumPartitions) < 1
   }
@@ -143,8 +141,8 @@ object Partitioner {
  * A [[org.apache.spark.Partitioner]] that implements hash-based partitioning using
  * Java's `Object.hashCode`.  使用 hashCode 分区
  *
- * Java arrays have hashCodes that are based on the arrays' identities rather than their contents, 
- * so attempting to partition an RDD[Array[_]] or RDD[(Array[_], _)] using a HashPartitioner will 
+ * Java arrays have hashCodes that are based on the arrays' identities rather than their contents,
+ * so attempting to partition an RDD[Array[_]] or RDD[(Array[_], _)] using a HashPartitioner will
  * produce an unexpected or incorrect result.
  *
  * java 数组的 hashCodes 不是基于它的内容计算的，而是identities，
@@ -198,7 +196,7 @@ class HashPartitioner(partitions: Int) extends Partitioner {
  *
  * A [[org.apache.spark.Partitioner]] that partitions sortable records by range into roughly
  * equal ranges. The ranges are determined by sampling the content of the RDD passed in.
- * 
+ *
  * @note The actual number of partitions created by the RangePartitioner might not be the same
  * as the `partitions` parameter, in the case where the number of sampled records is less than
  * the value of `partitions`.
@@ -215,13 +213,13 @@ class RangePartitioner[K : Ordering : ClassTag, V](
   // A constructor declared in order to maintain backward compatibility for Java, when we add the
   // 4th constructor parameter samplePointsPerPartitionHint. See SPARK-22160.
   // This is added to make sure from a bytecode point of view, there is still a 3-arg ctor.
-  // 构造参数，为了兼容java
+   // 构造参数，为了兼容java
   def this(partitions: Int, rdd: RDD[_ <: Product2[K, V]], ascending: Boolean) = {
     this(partitions, rdd, ascending, samplePointsPerPartitionHint = 20)
   }
 
   // We allow partitions = 0, which happens when sorting an empty RDD under the default settings.
-  // 在默认设置下，当排序一个空 RDD 时，允许partitions = 0
+    // 在默认设置下，当排序一个空 RDD 时，允许partitions = 0
   require(partitions >= 0, s"Number of partitions cannot be negative but found $partitions.")
   require(samplePointsPerPartitionHint > 0,
     s"Sample points per partition must be greater than 0 but found $samplePointsPerPartitionHint")
@@ -241,11 +239,11 @@ class RangePartitioner[K : Ordering : ClassTag, V](
       //每个分区的样本大小
       // 每个分区的采样数为平均值的三倍
       val sampleSizePerPartition = math.ceil(3.0 * sampleSize / rdd.partitions.length).toInt
+
       //通过在每个分区上的水塘采样绘制输入RDD。
       //返回一个元组： (总的样本数，Array(分区id,分区样本数,样本内容))
       //rdd.map(_._1) 取到的是原RDD的key组成的rdd
       val (numItems, sketched) = RangePartitioner.sketch(rdd.map(_._1), sampleSizePerPartition)
-
       if (numItems == 0L) {
         Array.empty
       } else {
@@ -272,7 +270,6 @@ class RangePartitioner[K : Ordering : ClassTag, V](
           //PartitionPruningRDD：An RDD used to prune RDD partitions/partitions
           val imbalanced = new PartitionPruningRDD(rdd.map(_._1), imbalancedPartitions.contains)
           val seed = byteswap32(-rdd.id - 1)
-          //重新抽样
           val reSampled = imbalanced.sample(withReplacement = false, fraction, seed).collect()
           val weight = (1.0 / fraction).toFloat
           candidates ++= reSampled.map(x => (x, weight))
@@ -282,7 +279,6 @@ class RangePartitioner[K : Ordering : ClassTag, V](
       }
     }
   }
-
   // 分区数：要加1
   def numPartitions: Int = rangeBounds.length + 1
 
@@ -317,7 +313,6 @@ class RangePartitioner[K : Ordering : ClassTag, V](
       rangeBounds.length - partition
     }
   }
-
 //首先需要同是RangePartitioner，然后边界数组里的原始相同，且排序相似相同。
   override def equals(other: Any): Boolean = other match {
     case r: RangePartitioner[_, _] =>
@@ -380,7 +375,7 @@ private[spark] object RangePartitioner {
   /**
    * 通过在每个分区上的水塘采样绘制输入RDD。
    * Sketches the input RDD via reservoir sampling on each partition.
-   * 
+   *
    * @param rdd the input RDD to sketch
    * @param sampleSizePerPartition max sample size per partition
    * @return (total number of items, an array of (partitionId, number of items, sample))  总的样本数，(分区id,分区样本数,样本)
@@ -388,7 +383,7 @@ private[spark] object RangePartitioner {
   def sketch[K : ClassTag](
       rdd: RDD[K],
       sampleSizePerPartition: Int): (Long, Array[(Int, Long, Array[K])]) = {
-    //  /** A unique ID for this RDD (within its SparkContext). */
+  	//  /** A unique ID for this RDD (within its SparkContext). */
     //  val id: Int = sc.newRddId()
     val shift = rdd.id
     // val classTagK = classTag[K] // to avoid serializing the entire partitioner object
@@ -399,11 +394,13 @@ private[spark] object RangePartitioner {
         iter, sampleSizePerPartition, seed)
       Iterator((idx, n, sample))
     }.collect()
+
     //把每个分区中的样本数加和。
-    val numItems = sketched.map(_._2).sum  //_._2 
+    val numItems = sketched.map(_._2).sum   //_._2 
     (numItems, sketched)  // sketched:  (idx, n, sample)
   }
-  /**
+
+    /**
    * 返回输入大小的水塘采样实现
    * def reservoirSampleAndCount[T: ClassTag](
    *   input: Iterator[T],k: Int, seed: Long = Random.nextLong()): (Array[T], Long) =
@@ -419,15 +416,16 @@ private[spark] object RangePartitioner {
    * 确定从候选对象进行范围划分的界限，并使用权重表示每个候选对象所代表的项数
    * Determines the bounds for range partitioning from candidates with weights indicating how many
    * items each represents. Usually this is 1 over the probability used to sample this candidate.
-   *  
+   *
    * @param candidates unordered candidates with weights 带有权重的未排序的候选集
    * @param partitions number of partitions
    * @return selected bounds
    */
   def determineBounds[K : Ordering : ClassTag](
-      candidates: ArrayBuffer[(K, Float)], // Float代表候选对象对应的权重
+      candidates: ArrayBuffer[(K, Float)],
       partitions: Int): Array[K] = {
     val ordering = implicitly[Ordering[K]]
+
     //根据第一个值排序，返回排序后的candidates
     val ordered = candidates.sortBy(_._1)
     //候选集大小
@@ -435,6 +433,7 @@ private[spark] object RangePartitioner {
     //权重总和，权重表示每个候选对象所代表的项数
     val sumWeights = ordered.map(_._2.toDouble).sum
     //每个分区理论的大小
+
     val step = sumWeights / partitions
     var cumWeight = 0.0
     var target = step
@@ -443,7 +442,7 @@ private[spark] object RangePartitioner {
     var j = 0
     var previousBound = Option.empty[K]
     while ((i < numCandidates) && (j < partitions - 1)) {
-      //取出第i个候选对象及其权重
+    //取出第i个候选对象及其权重
       val (key, weight) = ordered(i)
       cumWeight += weight
       //累积的项数大于等于理论大小，更新边界。否则，继续取下个候选对象。
@@ -462,6 +461,7 @@ private[spark] object RangePartitioner {
     bounds.toArray
   }
 }
+
 ```
 
 [参考1](https://www.jianshu.com/p/56579d1793fa)、[参考2](https://blog.csdn.net/wayne_2015/article/details/70242618)、[参考3](https://www.jianshu.com/p/b74b9663a36c)

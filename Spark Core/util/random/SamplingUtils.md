@@ -1,8 +1,6 @@
 # SamplingUtils
 
-
 ```java
-
 package org.apache.spark.util.random
 
 import scala.reflect.ClassTag
@@ -19,11 +17,12 @@ private[spark] object SamplingUtils {
    * @return (samples, input size)
    */
   def reservoirSampleAndCount[T: ClassTag](
-      input: Iterator[T],  // 待抽样的数据，比如一个分区
-      k: Int,              //蓄水池的大小，比如每个分区要抽样多少数据
+      input: Iterator[T], // 待抽样的数据，比如一个分区
+      k: Int,  //蓄水池的大小，比如每个分区要抽样多少数据
       seed: Long = Random.nextLong())
-    : (Array[T], Long) = {   //返回的是数组形式的样本集中的数据，和待抽样的数据的大小
-    //先new一个数组，大小为参数k，作为蓄水池
+    : (Array[T], Long) = {  //返回的是数组形式的样本集中的数据，和待抽样的数据的大小
+    
+	//先new一个数组，大小为参数k，作为蓄水池
     val reservoir = new Array[T](k)
     // Put the first k elements in the reservoir.
     //把input里的前k个元素放到蓄水池中
@@ -41,10 +40,10 @@ private[spark] object SamplingUtils {
       //如果input里的数据量小于蓄水池的容量k，那么就截断数组，把没有填入数据的位置删掉。
       val trimReservoir = new Array[T](i)
       System.arraycopy(reservoir, 0, trimReservoir, 0, i)
-      (trimReservoir, i) //蓄水池中的数据，蓄水池实际容量
+      (trimReservoir, i)  //蓄水池中的数据，蓄水池实际容量
     } else {
       // If input size > k, continue the sampling process.
-      //如果input里的数据量大于蓄水池的容量k，即input里还有数据，那么就继续抽样
+     //如果input里的数据量大于蓄水池的容量k，即input里还有数据，那么就继续抽样
       var l = i.toLong
       val rand = new XORShiftRandom(seed)
       //从刚才的序号开始，继续遍历
