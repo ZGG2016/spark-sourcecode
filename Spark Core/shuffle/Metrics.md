@@ -27,7 +27,8 @@ private[spark] trait ShuffleReadMetricsReporter {
 
 
 /**
- * 对每个shuffle，报告shuffle写入指标
+ * 对每个shuffle，报告 shuffle write 指标。
+ * 这个接口假设所有的方法都是在一个线程下调用，如，具体的实现不需要同步
  * An interface for reporting shuffle write metrics. This interface assumes all the methods are
  * called on a single-threaded, i.e. concrete implementations would not need to synchronize.
  *

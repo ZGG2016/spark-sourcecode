@@ -9,41 +9,7 @@ import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.util.Collections
 import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, TimeUnit}
-
-import scala.collection.mutable
-import scala.collection.mutable.HashMap
-import scala.concurrent.{ExecutionContext, Future}
-import scala.concurrent.duration._
-import scala.reflect.ClassTag
-import scala.util.{Failure, Random, Success, Try}
-import scala.util.control.NonFatal
-
-import com.codahale.metrics.{MetricRegistry, MetricSet}
-import com.google.common.cache.CacheBuilder
-import org.apache.commons.io.IOUtils
-
-import org.apache.spark._
-import org.apache.spark.executor.DataReadMethod
-import org.apache.spark.internal.Logging
-import org.apache.spark.internal.config
-import org.apache.spark.internal.config.Network
-import org.apache.spark.memory.{MemoryManager, MemoryMode}
-import org.apache.spark.metrics.source.Source
-import org.apache.spark.network._
-import org.apache.spark.network.buffer.{FileSegmentManagedBuffer, ManagedBuffer}
-import org.apache.spark.network.client.StreamCallbackWithID
-import org.apache.spark.network.netty.SparkTransportConf
-import org.apache.spark.network.shuffle._
-import org.apache.spark.network.shuffle.protocol.ExecutorShuffleInfo
-import org.apache.spark.network.util.TransportConf
-import org.apache.spark.rpc.RpcEnv
-import org.apache.spark.scheduler.ExecutorCacheTaskLocation
-import org.apache.spark.serializer.{SerializerInstance, SerializerManager}
-import org.apache.spark.shuffle.{ShuffleManager, ShuffleWriteMetricsReporter}
-import org.apache.spark.storage.memory._
-import org.apache.spark.unsafe.Platform
-import org.apache.spark.util._
-import org.apache.spark.util.io.ChunkedByteBuffer
+...
 
 /* Class for returning a fetched block and associated metrics. */
 private[spark] class BlockResult(

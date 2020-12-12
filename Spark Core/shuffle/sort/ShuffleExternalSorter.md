@@ -18,18 +18,9 @@ import org.slf4j.LoggerFactory;
 /**
  * An external sorter that is specialized for sort-based shuffle.
  * <p>
- * Incoming records are appended to data pages. When all records have been inserted (or when the
- * current thread's shuffle memory limit is reached), the in-memory records are sorted according to
- * their partition ids (using a {@link ShuffleInMemorySorter}). The sorted records are then
- * written to a single output file (or multiple files, if we've spilled). The format of the output
- * files is the same as the format of the final output file written by
- * {@link org.apache.spark.shuffle.sort.SortShuffleWriter}: each output partition's records are
- * written as a single serialized, compressed stream that can be read with a new decompression and
- * deserialization stream.
+ * Incoming records are appended to data pages. When all records have been inserted (or when the current thread's shuffle memory limit is reached), the in-memory records are sorted according to their partition ids (using a {@link ShuffleInMemorySorter}). The sorted records are then written to a single output file (or multiple files, if we've spilled). The format of the output  files is the same as the format of the final output file written by {@link org.apache.spark.shuffle.sort.SortShuffleWriter}: each output partition's records are written as a single serialized, compressed stream that can be read with a new decompression and deserialization stream.
  * <p>
- * Unlike {@link org.apache.spark.util.collection.ExternalSorter}, this sorter does not merge its
- * spill files. Instead, this merging is performed in {@link UnsafeShuffleWriter}, which uses a
- * specialized merge procedure that avoids extra serialization/deserialization.
+ * Unlike {@link org.apache.spark.util.collection.ExternalSorter}, this sorter does not merge its spill files. Instead, this merging is performed in {@link UnsafeShuffleWriter}, which uses a specialized merge procedure that avoids extra serialization/deserialization.
  */
 final class ShuffleExternalSorter extends MemoryConsumer {
 
