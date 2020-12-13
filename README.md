@@ -10,8 +10,6 @@
 
 - Spark Core
 
-- Spark SQL
-
-- Spark Streaming
+- Spark Unsafe
 
 - ...

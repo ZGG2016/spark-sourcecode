@@ -72,17 +72,25 @@ final class PackedRecordPointer {
   private static final long MASK_LONG_UPPER_13_BITS = ~MASK_LONG_LOWER_51_BITS;
 
   /**
+   * 打包一个记录地址和分区id成一个单个字。
    * Pack a record address and partition id into a single word.
    *
    * @param recordPointer a record pointer encoded by TaskMemoryManager.
+   *                        TaskMemoryManager编码的记录指针。
    * @param partitionId a shuffle partition id (maximum value of 2^24).
-   * @return a packed pointer that can be decoded using the {@link PackedRecordPointer} class.
+   *                       一个shuffle分区id
+   * @return a packed pointer that can be decoded using the {@link PackedRecordPointer} class. 返回一个可用使用PackedRecordPointer类解码的packed pointer
    */
   public static long packPointer(long recordPointer, int partitionId) {
     assert (partitionId <= MAXIMUM_PARTITION_ID);
     // Note that without word alignment we can address 2^27 bytes = 128 megabytes per page.
     // Also note that this relies on some internals of how TaskMemoryManager encodes its addresses.
-    final long pageNumber = (recordPointer & MASK_LONG_UPPER_13_BITS) >>> 24;
+    // 注意：没有字对齐，我们可以每页寻址2^27字节= 128mb。
+    // 这依赖于TaskMemoryManager如何编码其地址的一些内部机制。
+
+    //页数
+    final long pageNumber = (recordPointer & MASK_LONG_UPPER_13_BITS) >>> 24; 
+    //压缩的地址
     final long compressedAddress = pageNumber | (recordPointer & MASK_LONG_LOWER_27_BITS);
     return (((long) partitionId) << 40) | compressedAddress;
   }

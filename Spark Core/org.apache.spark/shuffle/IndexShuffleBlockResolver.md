@@ -18,9 +18,7 @@ import org.apache.spark.storage._
 import org.apache.spark.util.Utils
 
 /**
- * Create and maintain the shuffle blocks' mapping between logic block and physical file location.
- * Data of shuffle blocks from the same map task are stored in a single consolidated data file.
- * The offsets of the data blocks in the data file are stored in a separate index file.
+ * Create and maintain the shuffle blocks' mapping between logic block and physical file location. Data of shuffle blocks from the same map task are stored in a single consolidated data file. The offsets of the data blocks in the data file are stored in a separate index file.
  *
  * We use the name of the shuffle data's shuffleBlockId with reduce ID set to 0 and add ".data"
  * as the filename postfix for data file, and ".index" as the filename postfix for index file.

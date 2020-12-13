@@ -6,9 +6,7 @@ package org.apache.spark.shuffle
 import org.apache.spark.{ShuffleDependency, TaskContext}
 
 /**
- * Pluggable interface for shuffle systems. A ShuffleManager is created in SparkEnv on the driver
- * and on each executor, based on the spark.shuffle.manager setting. The driver registers shuffles
- * with it, and executors (or tasks running locally in the driver) can ask to read and write data.
+ * Pluggable interface for shuffle systems. A ShuffleManager is created in SparkEnv on the driver and on each executor, based on the spark.shuffle.manager setting. The driver registers shuffles with it, and executors (or tasks running locally in the driver) can ask to read and write data.
  *
  * NOTE: this will be instantiated by SparkEnv so its constructor can take a SparkConf and
  * boolean isDriver as parameters.
@@ -50,8 +48,7 @@ private[spark] trait ShuffleManager {
       metrics: ShuffleWriteMetricsReporter): ShuffleWriter[K, V]
 
   /**
-   * Get a reader for a range of reduce partitions (startPartition to endPartition-1, inclusive).
-   * Called on executors by reduce tasks.
+   * Get a reader for a range of reduce partitions (startPartition to endPartition-1, inclusive). Called on executors by reduce tasks.
    *
    * 创建一个 reader，用来读取一定范围内的分区[startPartition,endPartition-1]
    * 由 reduce tasks 在 executors 上调用
@@ -64,9 +61,11 @@ private[spark] trait ShuffleManager {
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C]
 
   /**
-   * Get a reader for a range of reduce partitions (startPartition to endPartition-1, inclusive) to
-   * read from map output (startMapIndex to endMapIndex - 1, inclusive).
-   * Called on executors by reduce tasks.
+   * [startPartition to endPartition-1)
+   * 为一定范围内的 reduce 分区，获取一个 reader，来从 map 输出中读取数据。
+   * 在 executors 上，由 reduce tasks 调用。
+   *
+   * Get a reader for a range of reduce partitions (startPartition to endPartition-1, inclusive) to read from map output (startMapIndex to endMapIndex - 1, inclusive). Called on executors by reduce tasks.
    */
   def getReaderForRange[K, C](
       handle: ShuffleHandle,

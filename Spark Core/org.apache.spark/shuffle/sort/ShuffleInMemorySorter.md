@@ -61,6 +61,7 @@ final class ShuffleInMemorySorter {
   private int pos = 0;
 
   /**
+   * 多少记录可以被插入，因为数组的一部分需要留给排序。
    * How many records could be inserted, because part of the array should be left for sorting.
    */
   private int usableCapacity = 0;
@@ -72,13 +73,16 @@ final class ShuffleInMemorySorter {
     assert (initialSize > 0);
     this.initialSize = initialSize;
     this.useRadixSort = useRadixSort;
+    //分配一个 `size` 大小的LongArray。
     this.array = consumer.allocateArray(initialSize);
     this.usableCapacity = getUsableCapacity();
   }
 
+  //可用容量
   private int getUsableCapacity() {
     // Radix sort requires same amount of used memory as buffer, Tim sort requires
     // half of the used memory as buffer.
+    // 基数排序需要相同数量的内存作为缓冲区，Tim排序需要一半的内存作为缓冲区。
     return (int) (array.size() / (useRadixSort ? 2 : 1.5));
   }
 
@@ -93,25 +97,30 @@ final class ShuffleInMemorySorter {
     return pos;
   }
 
+  //重置array
   public void reset() {
     // Reset `pos` here so that `spill` triggered by the below `allocateArray` will be no-op.
+    //重置pos新纪录插入的指针数组中的位置 ，为了下面的`allocateArray`触发的溢写是 no-op
     pos = 0;
     if (consumer != null) {
       consumer.freeArray(array);
-      // As `array` has been released, we should set it to  `null` to avoid accessing it before
-      // `allocateArray` returns. `usableCapacity` is also set to `0` to avoid any codes writing
-      // data to `ShuffleInMemorySorter` when `array` is `null` (e.g., in
-      // ShuffleExternalSorter.growPointerArrayIfNecessary, we may try to access
-      // `ShuffleInMemorySorter` when `allocateArray` throws SparkOutOfMemoryError).
+      // As `array` has been released, we should set it to  `null` to avoid accessing it before `allocateArray` returns. `usableCapacity` is also set to `0` to avoid any codes writing data to `ShuffleInMemorySorter` when `array` is `null` (e.g., in ShuffleExternalSorter.growPointerArrayIfNecessary, we may try to access  `ShuffleInMemorySorter` when `allocateArray` throws SparkOutOfMemoryError).
+      //当`array`被释放，我们应该设置它为null，以避免在`allocateArray`返回前访问它。
+//`usableCapacity`设为0，以避免，当`array`为null时，任意的代码将数据写入`ShuffleInMemorySorter`
+//(如，在ShuffleExternalSorter.growPointerArrayIfNecessary中，
+//当`allocateArray`抛出SparkOutOfMemoryError时，我们可能尝试访问`ShuffleInMemorySorter`)
       array = null;
       usableCapacity = 0;
-      array = consumer.allocateArray(initialSize);
+      array = consumer.allocateArray(initialSize); //分配一个初始容量
       usableCapacity = getUsableCapacity();
     }
   }
 
+  //扩展原array
   public void expandPointerArray(LongArray newArray) {
     assert(newArray.size() > array.size());
+    //copyMemory：由src往dst复制length长的一段
+    //由array往newArray复制 pos * 8L 长
     Platform.copyMemory(
       array.getBaseObject(),
       array.getBaseOffset(),
@@ -119,35 +128,41 @@ final class ShuffleInMemorySorter {
       newArray.getBaseOffset(),
       pos * 8L
     );
-    consumer.freeArray(array);
+    //把原array释放掉
+    consumer.freeArray(array); 
     array = newArray;
     usableCapacity = getUsableCapacity();
   }
 
+  //判断是否还有额外的空间来放新纪录
   public boolean hasSpaceForAnotherRecord() {
     return pos < usableCapacity;
   }
 
+  //返回使用的内存
   public long getMemoryUsage() {
     return array.size() * 8;
   }
 
   /**
+   * 插入一条将被排序的记录
    * Inserts a record to be sorted.
    *
-   * @param recordPointer a pointer to the record, encoded by the task memory manager. Due to
-   *                      certain pointer compression techniques used by the sorter, the sort can
-   *                      only operate on pointers that point to locations in the first
-   *                      {@link PackedRecordPointer#MAXIMUM_PAGE_SIZE_BYTES} bytes of a data page.
-   * @param partitionId the partition id, which must be less than or equal to
-   *                    {@link PackedRecordPointer#MAXIMUM_PARTITION_ID}.
+   * @param recordPointer a pointer to the record, encoded by the task memory manager. Due to  certain pointer compression techniques used by the sorter, the sort can only operate on pointers that point to locations in the first {@link PackedRecordPointer#MAXIMUM_PAGE_SIZE_BYTES} bytes of a data page.
+   *  一个指向记录的指针，由task memory manager编码。
+   *  由于sorter使用的特定的指针压缩技术，
+   *  排序仅在指向数据页的第一个MAXIMUM_PAGE_SIZE_BYTES字节中的位置的指针操作。
+   *
+   * @param partitionId the partition id, which must be less than or equal to {@link PackedRecordPointer#MAXIMUM_PARTITION_ID}. 分区id，必须小于等于MAXIMUM_PARTITION_ID
    */
   public void insertRecord(long recordPointer, int partitionId) {
+    //是否还有额外的空间来放新纪录，没有的话，抛异常。
     if (!hasSpaceForAnotherRecord()) {
       throw new IllegalStateException("There is no space for new record");
     }
+    //有的话，在array的pos位置，放一个packed pointer
     array.set(pos, PackedRecordPointer.packPointer(recordPointer, partitionId));
-    pos++;
+    pos++; //移动位置
   }
 
   /**

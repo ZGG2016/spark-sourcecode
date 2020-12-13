@@ -4,7 +4,7 @@
 package org.apache.spark.shuffle
 
 /**
- * reduce task 中，获得从 mappers 中读取的合并记录。
+ * 在 reduce task 中，获得从 mappers 中读取的合并记录。
  * Obtained inside a reduce task to read combined records from the mappers.
  */
 private[spark] trait ShuffleReader[K, C] {

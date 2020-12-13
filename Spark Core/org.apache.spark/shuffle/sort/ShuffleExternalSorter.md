@@ -7,21 +7,28 @@ import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.util.LinkedList;
-
-import scala.Tuple2;
-
-import com.google.common.annotations.VisibleForTesting;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 ...
 
 /**
+ * 一种专门用于基于排序的 shuffle 的外部 sorter。
  * An external sorter that is specialized for sort-based shuffle.
  * <p>
+ *
+ * 到来的记录被追加到数据页。当所有的记录被插入(或达到当前线程的shuffle内存的极限值)时，
+ *    根据它们的分区id，使用 ShuffleInMemorySorter 排序内存中的记录。
+ * 然后排序后的记录被写入一个单个文件中(如果溢写的话，可以有多个文件)。
+ * 输出文件的格式和SortShuffleWriter写的最终的输出文件相同：每个输出分区的记录作为一个序列化的、压缩的流来写入，这个流可用使用一个新的解压缩和反序列化的流读取。，
+ *
  * Incoming records are appended to data pages. When all records have been inserted (or when the current thread's shuffle memory limit is reached), the in-memory records are sorted according to their partition ids (using a {@link ShuffleInMemorySorter}). The sorted records are then written to a single output file (or multiple files, if we've spilled). The format of the output  files is the same as the format of the final output file written by {@link org.apache.spark.shuffle.sort.SortShuffleWriter}: each output partition's records are written as a single serialized, compressed stream that can be read with a new decompression and deserialization stream.
  * <p>
+ *
+ * 和ExternalSorter不同，这个sorter不会合并它的溢写文件。
+ * 而是在UnsafeShuffleWriter中，使用专门的合并过程执行合并，避免额外的序列化/反序列化。
+ *
  * Unlike {@link org.apache.spark.util.collection.ExternalSorter}, this sorter does not merge its spill files. Instead, this merging is performed in {@link UnsafeShuffleWriter}, which uses a specialized merge procedure that avoids extra serialization/deserialization.
  */
+
+//MemoryConsumer：支持溢写的 TaskMemoryManager 的内存消费者。
 final class ShuffleExternalSorter extends MemoryConsumer {
 
   private static final Logger logger = LoggerFactory.getLogger(ShuffleExternalSorter.class);
@@ -30,27 +37,27 @@ final class ShuffleExternalSorter extends MemoryConsumer {
   static final int DISK_WRITE_BUFFER_SIZE = 1024 * 1024;
 
   private final int numPartitions;
-  private final TaskMemoryManager taskMemoryManager;
+  private final TaskMemoryManager taskMemoryManager; //管理一个独立任务分配的内存。
   private final BlockManager blockManager;
   private final TaskContext taskContext;
   private final ShuffleWriteMetricsReporter writeMetrics;
 
   /**
+   * 当在内存中有很多元素时，强制sorter溢写。
    * Force this sorter to spill when there are this many elements in memory.
    */
   private final int numElementsForSpillThreshold;
 
   /** The buffer size to use when writing spills using DiskBlockObjectWriter */
+  //当使用DiskBlockObjectWriter进行溢写时，使用的缓存大小。
   private final int fileBufferSizeBytes;
 
   /** The buffer size to use when writing the sorted records to an on-disk file */
+  //当将排序了的记录写入一个磁盘文件时，使用的缓存大小。
   private final int diskWriteBufferSize;
 
   /**
-   * Memory pages that hold the records being sorted. The pages in this list are freed when
-   * spilling, although in principle we could recycle these pages across spills (on the other hand,
-   * this might not be necessary if we maintained a pool of re-usable pages in the TaskMemoryManager
-   * itself).
+   * Memory pages that hold the records being sorted. The pages in this list are freed when spilling, although in principle we could recycle these pages across spills (on the other hand, this might not be necessary if we maintained a pool of re-usable pages in the TaskMemoryManager itself).
    */
 
   // 存储正在排序的记录的内存页。
@@ -68,6 +75,7 @@ final class ShuffleExternalSorter extends MemoryConsumer {
   private long peakMemoryUsedBytes;
 
   // These variables are reset after spilling:
+  //溢写完成后，这些变量被重置
   @Nullable private ShuffleInMemorySorter inMemSorter;
   @Nullable private MemoryBlock currentPage = null;
   private long pageCursor = -1;
@@ -245,24 +253,13 @@ final class ShuffleExternalSorter extends MemoryConsumer {
     }
 
     if (!isLastFile) {  // i.e. this is a spill file
-      // The current semantics of `shuffleRecordsWritten` seem to be that it's updated when records
-      // are written to disk, not when they enter the shuffle sorting code. DiskBlockObjectWriter
-      // relies on its `recordWritten()` method being called in order to trigger periodic updates to
-      // `shuffleBytesWritten`. If we were to remove the `recordWritten()` call and increment that
-      // counter at a higher-level, then the in-progress metrics for records written and bytes
-      // written would get out of sync.
+      // The current semantics of `shuffleRecordsWritten` seem to be that it's updated when records are written to disk, not when they enter the shuffle sorting code. DiskBlockObjectWriter relies on its `recordWritten()` method being called in order to trigger periodic updates to `shuffleBytesWritten`. If we were to remove the `recordWritten()` call and increment that counter at a higher-level, then the in-progress metrics for records written and bytes written would get out of sync.
       //
-      // When writing the last file, we pass `writeMetrics` directly to the DiskBlockObjectWriter;
-      // in all other cases, we pass in a dummy write metrics to capture metrics, then copy those
-      // metrics to the true write metrics here. The reason for performing this copying is so that
-      // we can avoid reporting spilled bytes as shuffle write bytes.
+      // When writing the last file, we pass `writeMetrics` directly to the DiskBlockObjectWriter; in all other cases, we pass in a dummy write metrics to capture metrics, then copy those metrics to the true write metrics here. The reason for performing this copying is so that we can avoid reporting spilled bytes as shuffle write bytes.
       //
-      // Note that we intentionally ignore the value of `writeMetricsToUse.shuffleWriteTime()`.
-      // Consistent with ExternalSorter, we do not count this IO towards shuffle write time.
-      // SPARK-3577 tracks the spill time separately.
+      // Note that we intentionally ignore the value of `writeMetricsToUse.shuffleWriteTime()`. Consistent with ExternalSorter, we do not count this IO towards shuffle write time. SPARK-3577 tracks the spill time separately.
 
-      // This is guaranteed to be a ShuffleWriteMetrics based on the if check in the beginning
-      // of this method.
+      // This is guaranteed to be a ShuffleWriteMetrics based on the if check in the beginning of this method.
       writeMetrics.incRecordsWritten(
         ((ShuffleWriteMetrics)writeMetricsToUse).recordsWritten());
       taskContext.taskMetrics().incDiskBytesSpilled(
@@ -271,6 +268,7 @@ final class ShuffleExternalSorter extends MemoryConsumer {
   }
 
   /**
+   * 排序并溢写当前记录，以缓解内存压力
    * Sort and spill the current records in response to memory pressure.
    */
   @Override
@@ -287,10 +285,10 @@ final class ShuffleExternalSorter extends MemoryConsumer {
 
     writeSortedFile(false);
     final long spillSize = freeMemory();
-    inMemSorter.reset();
-    // Reset the in-memory sorter's pointer array only after freeing up the memory pages holding the
-    // records. Otherwise, if the task is over allocated memory, then without freeing the memory
-    // pages, we might not be able to get memory for the pointer array.
+    inMemSorter.reset();   //重置inMemSorter
+    // Reset the in-memory sorter's pointer array only after freeing up the memory pages holding the records. Otherwise, if the task is over allocated memory, then without freeing the memory pages, we might not be able to get memory for the pointer array.
+    //仅在释放内存页持有的记录后，重置内存sorter的指针数组。
+    //反之，如果为任务超额分配了内存，那么如果不释放内存页，我们可能无法为指针数组获得内存。
     taskContext.taskMetrics().incMemoryBytesSpilled(spillSize);
     return spillSize;
   }
@@ -305,6 +303,7 @@ final class ShuffleExternalSorter extends MemoryConsumer {
     return ((inMemSorter == null) ? 0 : inMemSorter.getMemoryUsage()) + totalPageSize;
   }
 
+  //更新使用过的峰值内存
   private void updatePeakMemoryUsed() {
     long mem = getMemoryUsage();
     if (mem > peakMemoryUsedBytes) {
@@ -322,7 +321,7 @@ final class ShuffleExternalSorter extends MemoryConsumer {
     return peakMemoryUsedBytes;
   }
 
-  //释放的内存量
+  //返回释放的MemoryBlock内存量
   private long freeMemory() {
     updatePeakMemoryUsed();
     long memoryFreed = 0;
@@ -337,12 +336,16 @@ final class ShuffleExternalSorter extends MemoryConsumer {
   }
 
   /**
-   * Force all memory and spill files to be deleted; called by shuffle error-handling code.
+   * 强制删除所有内存和溢写文件；由shuffle 错误处理程序调用。
+   * Force all memory and spill files to be deleted; called by shuffle  error-handling code.
    */
   public void cleanupResources() {
-    freeMemory();
+//释放内存页中的MemoryBlock(Memory pages that hold the records being sorted. )
+    freeMemory(); 
     if (inMemSorter != null) {
-      inMemSorter.free();
+//释放一个LongArray占用的内存
+//(这个数组是PackedRecordPointer编码的记录指针和分区ids的数组。)
+      inMemSorter.free();  
       inMemSorter = null;
     }
     for (SpillInfo spill : spills) {
@@ -353,24 +356,29 @@ final class ShuffleExternalSorter extends MemoryConsumer {
   }
 
   /**
-   * Checks whether there is enough space to insert an additional record in to the sort pointer
-   * array and grows the array if additional space is required. If the required space cannot be
-   * obtained, then the in-memory data will be spilled to disk.
+   * 检查是否有足够的空间，来插入额外的记录到sort pointer数组，
+   * 并在要求额外空间的情况下，增长数组。
+   * 如果不能获得要求的空间，内存中的数据就被溢写到磁盘。
+   *
+   * Checks whether there is enough space to insert an additional record in to the sort pointer array and grows the array if additional space is required. If the required space cannot be obtained, then the in-memory data will be spilled to disk.
    */
   private void growPointerArrayIfNecessary() throws IOException {
     assert(inMemSorter != null);
+    //如果没有足够的额外空间了
     if (!inMemSorter.hasSpaceForAnotherRecord()) {
       long used = inMemSorter.getMemoryUsage();
       LongArray array;
       try {
-        // could trigger spilling
+        // could trigger spilling 可以触发溢写
+        //分配一个新数组
         array = allocateArray(used / 8 * 2);
       } catch (TooLargePageException e) {
         // The pointer array is too big to fix in a single page, spill.
+        // 指针数组太大，以至于不能放在一个页中，就溢写。
         spill();
         return;
       } catch (SparkOutOfMemoryError e) {
-        // should have trigger spilling
+        // should have trigger spilling  应该触发溢写
         if (!inMemSorter.hasSpaceForAnotherRecord()) {
           logger.error("Unable to grow the pointer array");
           throw e;
@@ -378,8 +386,9 @@ final class ShuffleExternalSorter extends MemoryConsumer {
         return;
       }
       // check if spilling is triggered or not
+      // 检查是否触发了溢写 ？？？
       if (inMemSorter.hasSpaceForAnotherRecord()) {
-        freeArray(array);
+        freeArray(array); 
       } else {
         inMemSorter.expandPointerArray(array);
       }
@@ -387,15 +396,20 @@ final class ShuffleExternalSorter extends MemoryConsumer {
   }
 
   /**
-   * Allocates more memory in order to insert an additional record. This will request additional
-   * memory from the memory manager and spill if the requested memory can not be obtained.
+   * 为了插入额外的记录，分配更多的内存。
+   * 这将向memory manager请求额外的内存，如果不能获得，就溢写。
    *
-   * @param required the required space in the data page, in bytes, including space for storing
-   *                      the record size. This must be less than or equal to the page size (records
-   *                      that exceed the page size are handled via a different code path which uses
-   *                      special overflow pages).
+   * Allocates more memory in order to insert an additional record. This will request additional memory from the memory manager and spill if the requested memory can not be obtained.
+   *
+   * @param required the required space in the data page, in bytes, including space for storing the record size. This must be less than or equal to the page size (records that exceed the page size are handled via a different code path which uses special overflow pages).
+   * 数据页中要求的空间，字节，包括了存储记录大小的空间。
+   * 这必须小于等于页大小(超出页大小的记录通过一个不同的代码(使用特殊的溢出页)来处理)
    */
   private void acquireNewPageIfNecessary(int required) {
+
+    // 当前页为null，
+    // 或页的偏移量加上要求的空间 大于 页的基础偏移量加上页的大小，
+    // 就要分配页了。
     if (currentPage == null ||
       pageCursor + required > currentPage.getBaseOffset() + currentPage.size() ) {
       // TODO: try to find space in previous pages
@@ -441,8 +455,7 @@ final class ShuffleExternalSorter extends MemoryConsumer {
    *
    * Close the sorter, causing any buffered data to be sorted and written out to disk.
    *
-   * @return metadata for the spill files written by this sorter. If no records were ever inserted
-   *         into this sorter, then this will return an empty array.
+   * @return metadata for the spill files written by this sorter. If no records were ever inserted into this sorter, then this will return an empty array.
    *  返回这个sorter写的溢写文件的元数据。如果没有记录插入到这个sorter，那么返回空数组
    */
   public SpillInfo[] closeAndGetSpills() throws IOException {

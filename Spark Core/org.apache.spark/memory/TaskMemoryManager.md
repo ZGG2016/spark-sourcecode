@@ -259,11 +259,15 @@ public class TaskMemoryManager {
   }
 
   /**
-   * Allocate a block of memory that will be tracked in the MemoryManager's page table; this is
-   * intended for allocating large blocks of Tungsten memory that will be shared between operators.
+   * 分配一个内存块，它将在 MemoryManager 的 page 中被追踪。
+   * 这是为了分配 将在操作符之间共享的Tungsten内存。
    *
-   * Returns `null` if there was not enough memory to allocate the page. May return a page that
-   * contains fewer bytes than requested, so callers should verify the size of returned pages.
+   * Allocate a block of memory that will be tracked in the MemoryManager's page table; this is intended for allocating large blocks of Tungsten memory that will be shared between operators.
+   *
+   * 如果没有足够的内存来分配page，就返回null。
+   * 可能会返回一个page，但包含比要求的字节要少的内存，所以，调用者应该验证返回的pages的大小。
+   *
+   * Returns `null` if there was not enough memory to allocate the page. May return a page that contains fewer bytes than requested, so callers should verify the size of returned pages.
    *
    * @throws TooLargePageException
    */
@@ -312,6 +316,7 @@ public class TaskMemoryManager {
   }
 
   /**
+   * 释放TaskMemoryManager#allocatePage分配的内存块。
    * Free a block of memory allocated via {@link TaskMemoryManager#allocatePage}.
    */
   public void freePage(MemoryBlock page, MemoryConsumer consumer) {

@@ -15,11 +15,7 @@ import org.apache.spark.util.Utils
 import org.apache.spark.util.collection.OpenHashSet
 
 /**
- * In sort-based shuffle, incoming records are sorted according to their target partition ids, then
- * written to a single map output file. Reducers fetch contiguous regions of this file in order to
- * read their portion of the map output. In cases where the map output data is too large to fit in
- * memory, sorted subsets of the output can be spilled to disk and those on-disk files are merged
- * to produce the final output file.
+ * In sort-based shuffle, incoming records are sorted according to their target partition ids, then written to a single map output file. Reducers fetch contiguous regions of this file in order to read their portion of the map output. In cases where the map output data is too large to fit in memory, sorted subsets of the output can be spilled to disk and those on-disk files are merged to produce the final output file.
  *
  * 在基于排序的 shuffle 中，传入的记录根据它们的目标分区id进行排序，
  *     然后写入到一个 map 输出文件中。  (这样相邻的数据进入相同分区)
