@@ -14,10 +14,9 @@ private[spark]
  *
  * 当接收到 shuffle data 时，由 BlockStore 来抽象不同的 shuffle 实现。
  *
- * Implementers of this trait understand how to retrieve block data for a logical shuffle block
- * identifier (i.e. map, reduce, and shuffle). Implementations may use files or file segments to
- * encapsulate shuffle data. This is used by the BlockStore to abstract over different shuffle
- * implementations when shuffle data is retrieved.
+ * Implementers of this trait understand how to retrieve block data for a logical shuffle block identifier (i.e. map, reduce, and shuffle). 
+ * Implementations may use files or file segments to encapsulate shuffle data. 
+ * This is used by the BlockStore to abstract over different shuffle implementations when shuffle data is retrieved.
  */
 trait ShuffleBlockResolver {
   type ShuffleId = Int

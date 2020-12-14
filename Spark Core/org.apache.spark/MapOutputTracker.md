@@ -6,25 +6,7 @@ package org.apache.spark
 import java.io.{ByteArrayInputStream, ObjectInputStream, ObjectOutputStream}
 import java.util.concurrent.{ConcurrentHashMap, LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 import java.util.concurrent.locks.ReentrantReadWriteLock
-
-import scala.collection.JavaConverters._
-import scala.collection.mutable.{HashMap, ListBuffer, Map}
-import scala.concurrent.{ExecutionContext, Future}
-import scala.concurrent.duration.Duration
-import scala.reflect.ClassTag
-import scala.util.control.NonFatal
-
-import org.apache.commons.io.output.{ByteArrayOutputStream => ApacheByteArrayOutputStream}
-
-import org.apache.spark.broadcast.{Broadcast, BroadcastManager}
-import org.apache.spark.internal.Logging
-import org.apache.spark.internal.config._
-import org.apache.spark.io.CompressionCodec
-import org.apache.spark.rpc.{RpcCallContext, RpcEndpoint, RpcEndpointRef, RpcEnv}
-import org.apache.spark.scheduler.{ExecutorCacheTaskLocation, MapStatus}
-import org.apache.spark.shuffle.MetadataFetchFailedException
-import org.apache.spark.storage.{BlockId, BlockManagerId, ShuffleBlockId}
-import org.apache.spark.util._
+...
 
 /**
  * Helper class used by the [[MapOutputTrackerMaster]] to perform bookkeeping for a single
@@ -319,8 +301,9 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
   }
 
   /**
+   * 为了读取给定范围的 map 输出分区中的每个 shuffle 块，
    * 从 executors 中调用，以获取服务器 uri 和块输出大小，
-   * 	从给定范围的 map 输出分区中的每个 shuffle 块。
+   * 	
    *
    * Called from executors to get the server URIs and output sizes for each shuffle block that
    * needs to be read from a given range of map output partitions (startPartition is included but

@@ -43,23 +43,22 @@ abstract class NarrowDependency[T](_rdd: RDD[T]) extends Dependency[T] {
 
 
 /**
- * 一个 shuffle stage 输出的依赖
+ * 关于一个 shuffle stage 输出的依赖
  *
  * 在 shuffle 中，因为在 executor 端不需要这个rdd，所以这个rdd是不可序列化的
  *
  * :: DeveloperApi ::
- * Represents a dependency on the output of a shuffle stage. Note that in the case of shuffle,
- * the RDD is transient since we don't need it on the executor side.
+ * Represents a dependency on the output of a shuffle stage. 
+ * Note that in the case of shuffle, the RDD is transient since we don't need it on the executor side.
  *
- * @param _rdd the parent RDD
- * @param partitioner partitioner used to partition the shuffle output
+ * @param _rdd the parent RDD  父RDD
+ * @param partitioner partitioner used to partition the shuffle output 用来分区shuffle输出的分区器
  * @param serializer [[org.apache.spark.serializer.Serializer Serializer]] to use. If not set
- *                   explicitly then the default serializer, as specified by `spark.serializer`
- *                   config option, will be used.
+ *   explicitly then the default serializer, as specified by `spark.serializer` config option, will be used. 如果没有设置使用的序列化器，就使用`spark.serializer`指定的默认序列化器
  * @param keyOrdering key ordering for RDD's shuffles
- * @param aggregator map/reduce-side aggregator for RDD's shuffle
- * @param mapSideCombine whether to perform partial aggregation (also known as map-side combine)
- * @param shuffleWriterProcessor the processor to control the write behavior in ShuffleMapTask
+ * @param aggregator map/reduce-side aggregator for RDD's shuffle  map/reduce端的聚合器
+ * @param mapSideCombine whether to perform partial aggregation (also known as map-side combine) 是否执行map端聚合
+ * @param shuffleWriterProcessor the processor to control the write behavior in ShuffleMapTask 控制ShuffleMapTask中的写行为的处理器。
  */
 @DeveloperApi
 class ShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
@@ -76,17 +75,28 @@ class ShuffleDependency[K: ClassTag, V: ClassTag, C: ClassTag](
   if (mapSideCombine) {
     require(aggregator.isDefined, "Map-side combine without Aggregator specified!")
   }
+
   override def rdd: RDD[Product2[K, V]] = _rdd.asInstanceOf[RDD[Product2[K, V]]]
 
+  //获得key\value的运行时类
   private[spark] val keyClassName: String = reflect.classTag[K].runtimeClass.getName
   private[spark] val valueClassName: String = reflect.classTag[V].runtimeClass.getName
   // Note: It's possible that the combiner class tag is null, if the combineByKey
   // methods in PairRDDFunctions are used instead of combineByKeyWithClassTag.
+  //注意：如果使用 PairRDDFunctions 中的 combineByKey 方法，而不使用 combineByKeyWithClassTag
+  // combiner class tag 为空是可能的
+
+  //获得combiner的运行时类
   private[spark] val combinerClassName: Option[String] =
     Option(reflect.classTag[C]).map(_.runtimeClass.getName)
 
+  //为一次shuffle，创建一个id标识
   val shuffleId: Int = _rdd.context.newShuffleId()
+  //  private val nextShuffleId = new AtomicInteger(0)
+  // private[spark] def newShuffleId(): Int = nextShuffleId.getAndIncrement()
 
+
+  // driver 使用 shuffleManager 注册 shuffles
   val shuffleHandle: ShuffleHandle = _rdd.context.env.shuffleManager.registerShuffle(
     shuffleId, this)
 

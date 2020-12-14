@@ -15,10 +15,13 @@ import org.apache.spark.util.Utils
 import org.apache.spark.util.collection.OpenHashSet
 
 /**
- * In sort-based shuffle, incoming records are sorted according to their target partition ids, then written to a single map output file. Reducers fetch contiguous regions of this file in order to read their portion of the map output. In cases where the map output data is too large to fit in memory, sorted subsets of the output can be spilled to disk and those on-disk files are merged to produce the final output file.
+ * In sort-based shuffle, incoming records are sorted according to their target partition ids, then written to a single map output file. 
+ * Reducers fetch contiguous regions of this file in order to read their portion of the map output. 
+ * In cases where the map output data is too large to fit in memory, 
+ * sorted subsets of the output can be spilled to disk and those on-disk files are merged to produce the final output file.
  *
  * 在基于排序的 shuffle 中，传入的记录根据它们的目标分区id进行排序，
- *     然后写入到一个 map 输出文件中。  (这样相邻的数据进入相同分区)
+ *     然后写入到一个 map 输出文件中。  【这样具有相同目标分区的数据进入相同分区】
  * 为了能读取 map 输出的部分数据，Reducers 获取这个文件的相邻的数据区域。
  * 当装入内存中的 map 输出数据太大，排序了的输出数据可以溢写到磁盘，
        这些在磁盘上的文件被合并到最终的输出文件中。
@@ -27,14 +30,13 @@ import org.apache.spark.util.collection.OpenHashSet
  *
  *  - Serialized sorting: used when all three of the following conditions hold:
  *    1. The shuffle dependency specifies no map-side combine.
- *    2. The shuffle serializer supports relocation of serialized values (this is currently
- *       supported by KryoSerializer and Spark SQL's custom serializers).
+ *    2. The shuffle serializer supports relocation of serialized values (this is currently supported by KryoSerializer and Spark SQL's custom serializers).
  *    3. The shuffle produces fewer than or equal to 16777216 output partitions.
  *  - Deserialized sorting: used to handle all other cases.
  *
  * Sort-based shuffle 有两种不同的写入路径，来产生它的 map 输出文件：
  *   - Serialized sorting: 
- *     1. shuffle 依赖项没有指定聚合或输出顺序。
+ *     1. shuffle dependency 没有指定map端聚合。
  *     2. shuffle 序列化器支持序列化值的重定位( KryoSerializer 和 Spark SQL 的自定义序列化程序目前支持这一点)
  *     3. shuffle 产生的输出分区少于16777216个。
  *   - Deserialized sorting: 除了以上情况的其他情况。
@@ -42,42 +44,41 @@ import org.apache.spark.util.collection.OpenHashSet
  * Serialized sorting mode
  * -----------------------
  *
- * 在 serialized sorting 模式中，记录只要传递到 shuffle writer，就被序列化。
+ * 在 serialized sorting 模式中，传入的记录只要传递到 shuffle writer，就被序列化。
  *     然后在排序期间，以序列化的形式被缓存。
  * 
  * 这个写路径实现有几种优化方式：
- *     - 排序操作是基于序列化后的二进制数据，而不是 Java 对象。这可以减少内存消耗和 GC 负载。这种方式要求序列化器能允许序列化后的记录不需要反序列化就可以排序。
+ * 
+ *     - 排序操作是基于序列化后的二进制数据，而不是 Java 对象。
+ *       这可以减少内存消耗和 GC 负载。
+ *       这种方式要求序列化器能允许序列化后的记录不需要反序列化就可以排序。
  *
  *     - 使用一种高效缓存排序器[ShuffleExternalSorter]，
- * 能够排序压缩后的记录指针和分区id组成的数组。在排序数组中，每个记录占用8字节的空间。
- * 这样可以将更多的数组放入缓存中。
+ *       能够排序压缩后的记录指针和分区id组成的数组。
+ *       在排序数组中，每个记录占用8字节的空间。
+ *       这样可以将更多的数组放入缓存中。
  *
- *     - 溢出合并过程对属于同一分区的序列化后的记录块进行操作，并在合并期间不需反序列化记录。
+ *     - 溢出合并过程对序列化后的记录块进行操作，
+ *       记录属于同一分区，且在合并期间不需反序列化。
  *
- *     - 当溢出压缩编解码器支持压缩数据的连接时，溢出合并只是连接序列化的压缩的溢出分区，
- * 以产生最终的输出分区。这允许使用高效的数据复制方法，如 NIO 的 "transferTo"，
- * 并避免在合并期间分配解压缩或复制缓冲区。
+ *     - 当溢出压缩编解码器支持压缩数据的连接时，
+ *       溢出合并只是连接序列化的压缩的溢出分区，以产生最终的输出分区。
+ *       这允许使用高效的数据复制方法，如 NIO 的 "transferTo"，
+ *       并避免在合并期间分配解压缩或复制缓冲区。
  *
- * In the serialized sorting mode, incoming records are serialized as soon as they are passed to the
- * shuffle writer and are buffered in a serialized form during sorting. This write path implements
- * several optimizations:
+ * In the serialized sorting mode, incoming records are serialized as soon as they are passed to the shuffle writer 
+ * and are buffered in a serialized form during sorting. 
+ * This write path implements several optimizations:
  *
- *  - Its sort operates on serialized binary data rather than Java objects, which reduces memory
- *    consumption and GC overheads. This optimization requires the record serializer to have certain
- *    properties to allow serialized records to be re-ordered without requiring deserialization.
+ *  - Its sort operates on serialized binary data rather than Java objects, which reduces memory consumption and GC overheads. This optimization requires the record serializer to have certain properties to allow serialized records to be re-ordered without requiring deserialization.
  *    See SPARK-4550, where this optimization was first proposed and implemented, for more details.
  *
  *  - It uses a specialized cache-efficient sorter ([[ShuffleExternalSorter]]) that sorts
- *    arrays of compressed record pointers and partition ids. By using only 8 bytes of space per
- *    record in the sorting array, this fits more of the array into cache.
+ *    arrays of compressed record pointers and partition ids. By using only 8 bytes of space per record in the sorting array, this fits more of the array into cache.
  *
- *  - The spill merging procedure operates on blocks of serialized records that belong to the same
- *    partition and does not need to deserialize records during the merge.
+ *  - The spill merging procedure operates on blocks of serialized records that belong to the same partition and does not need to deserialize records during the merge.
  *
- *  - When the spill compression codec supports concatenation of compressed data, the spill merge
- *    simply concatenates the serialized and compressed spill partitions to produce the final output
- *    partition.  This allows efficient data copying methods, like NIO's `transferTo`, to be used
- *    and avoids the need to allocate decompression or copying buffers during the merge.
+ *  - When the spill compression codec supports concatenation of compressed data, the spill merge simply concatenates the serialized and compressed spill partitions to produce the final output partition.  This allows efficient data copying methods, like NIO's `transferTo`, to be used and avoids the need to allocate decompression or copying buffers during the merge.
  *
  * For more details on these optimizations, see SPARK-7081.
  */
@@ -116,15 +117,10 @@ private[spark] class SortShuffleManager(conf: SparkConf) extends ShuffleManager 
   	//如果分区数小于 spark.shuffle.sort.bypassMergeThreshold，且不需要 map 端的聚合操作，
     //启用bypass模式
     if (SortShuffleWriter.shouldBypassMergeSort(conf, dependency)) {
-      // If there are fewer than spark.shuffle.sort.bypassMergeThreshold partitions and we don't
-      // need map-side aggregation, then write numPartitions files directly and just concatenate
-      // them at the end. This avoids doing serialization and deserialization twice to merge
-      // together the spilled files, which would happen with the normal code path. The downside is
-      // having multiple files open at a time and thus more memory allocated to buffers.
+      // If there are fewer than spark.shuffle.sort.bypassMergeThreshold partitions and we don't need map-side aggregation, then write numPartitions files directly and just concatenate them at the end. This avoids doing serialization and deserialization twice to merge together the spilled files, which would happen with the normal code path. The downside is having multiple files open at a time and thus more memory allocated to buffers.
 
-      //（numPartitions files ？？？）
-      //启用bypass模式，就可以直接写入到 numPartitions 个文件，最后连接它们。 
-      //这样就避免了两次序列化和反序列化来合并溢出的文件。
+      //启用bypass模式，就可以直接写 numPartitions 个文件，最后连接它们。 
+      //这样就避免了序列化和反序列化来合并溢出的文件。
       //缺点是一次打开多个文件，因此有更多的内存分配给缓冲区。
       new BypassMergeSortShuffleHandle[K, V](
         shuffleId, dependency.asInstanceOf[ShuffleDependency[K, V, V]])
@@ -154,6 +150,9 @@ private[spark] class SortShuffleManager(conf: SparkConf) extends ShuffleManager 
       endPartition: Int,
       context: TaskContext,
       metrics: ShuffleReadMetricsReporter): ShuffleReader[K, C] = {
+
+// 返回一个二元组序列，描述了存储在这个块管理器的 shuffle 块。
+// 元组中的第一个元素是 BlockManagerId ，第二个元素是(shuffle块id, shuffle块大小)
     val blocksByAddress = SparkEnv.get.mapOutputTracker.getMapSizesByExecutorId(
       handle.shuffleId, startPartition, endPartition)
 
@@ -192,6 +191,9 @@ private[spark] class SortShuffleManager(conf: SparkConf) extends ShuffleManager 
       handle.shuffleId, _ => new OpenHashSet[Long](16))
     mapTaskIds.synchronized { mapTaskIds.add(context.taskAttemptId()) }
     val env = SparkEnv.get
+//UnsafeShuffleWriter：对应ShuffleHandle类型为SerializedShuffleHandle。
+//BypassMergeSortShuffleWriter：对应ShuffleHandle类型为BypassMergeSortShuffleHandle。
+//SortShuffleWriter：对应对应ShuffleHandle类型为BaseShuffleHandle。
     handle match {
       case unsafeShuffleHandle: SerializedShuffleHandle[K @unchecked, V @unchecked] =>
         new UnsafeShuffleWriter(
@@ -254,8 +256,7 @@ private[spark] object SortShuffleManager extends Logging {
     "__fetch_continuous_blocks_in_batch_enabled"
 
   /**
-   * Helper method for determining whether a shuffle reader should fetch the continuous blocks
-   * in batch.
+   * Helper method for determining whether a shuffle reader should fetch the continuous blocks in batch.
    */
   def canUseBatchFetch(startPartition: Int, endPartition: Int, context: TaskContext): Boolean = {
     val fetchMultiPartitions = endPartition - startPartition > 1
@@ -265,21 +266,23 @@ private[spark] object SortShuffleManager extends Logging {
 
   /**
    * 用来决定一个 shuffle 是否应该使用一个优化的序列化的 shuffle 路径，
-   * 或者它是否应该退回到对反序列化对象进行操作的原始路径。
-   * Helper method for determining whether a shuffle should use an optimized serialized shuffle
-   * path or whether it should fall back to the original path that operates on deserialized objects.
+   * 或者它是否应该回退到对反序列化对象进行操作的原始路径。
+   * Helper method for determining whether a shuffle should use an optimized serialized shuffle path or whether it should fall back to the original path that operates on deserialized objects.
    */
   def canUseSerializedShuffle(dependency: ShuffleDependency[_, _, _]): Boolean = {
     val shufId = dependency.shuffleId
     val numPartitions = dependency.partitioner.numPartitions
+    //不启用对象的重定位，返回false。
     if (!dependency.serializer.supportsRelocationOfSerializedObjects) {
       log.debug(s"Can't use serialized shuffle for shuffle $shufId because the serializer, " +
         s"${dependency.serializer.getClass.getName}, does not support object relocation")
       false
+    // 启用map端聚合，返回false。
     } else if (dependency.mapSideCombine) {
       log.debug(s"Can't use serialized shuffle for shuffle $shufId because we need to do " +
         s"map-side aggregation")
       false
+    // 分区数大于16777216，返回false。
     } else if (numPartitions > MAX_SHUFFLE_OUTPUT_PARTITIONS_FOR_SERIALIZED_MODE) {
       log.debug(s"Can't use serialized shuffle for shuffle $shufId because it has more than " +
         s"$MAX_SHUFFLE_OUTPUT_PARTITIONS_FOR_SERIALIZED_MODE partitions")
@@ -326,3 +329,9 @@ private[spark] class BypassMergeSortShuffleHandle[K, V](
 }
 
 ```
+
+参考阅读：
+
+[https://zhuanlan.zhihu.com/p/133852785](https://zhuanlan.zhihu.com/p/133852785)
+
+[https://www.cnblogs.com/zhuge134/p/11026040.html](https://www.cnblogs.com/zhuge134/p/11026040.html)
